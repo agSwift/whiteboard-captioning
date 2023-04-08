@@ -10,11 +10,11 @@ def extract_preprocess_data(
 ) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.int_]]:
     """
     Extracts and preprocesses the stroke data from the given stroke file directory.
-    
+
     Args:
         stroke_file_dir (Path): The directory containing the stroke files.
         stroke_type (str): The type of stroke data (e.g. "numbers").
-    
+
     Returns:
         A tuple containing the stroke labels and points.
     """
