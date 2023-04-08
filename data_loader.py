@@ -6,8 +6,18 @@ import numpy.typing as npt
 
 
 def extract_preprocess_data(
-    stroke_file_dir: Path,
+    stroke_file_dir: Path, stroke_type: str
 ) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.int_]]:
+    """
+    Extracts and preprocesses the stroke data from the given stroke file directory.
+    
+    Args:
+        stroke_file_dir (Path): The directory containing the stroke files.
+        stroke_type (str): The type of stroke data (e.g. "numbers").
+    
+    Returns:
+        A tuple containing the stroke labels and points.
+    """
     # Get all txt files in the stroke file directory.
     stroke_files = list(stroke_file_dir.glob("*.txt"))
 
@@ -60,13 +70,15 @@ def extract_preprocess_data(
     # Convert the stroke labels to a numpy array.
     stroke_labels_arr = np.array(stroke_labels, dtype=np.int_)
 
-    # Save the stroke labels and points to a numpy file.
+    # Create the preprocessed data directory if it doesn't exist.
     Path("data").mkdir(parents=True, exist_ok=True)
 
-    stroke_labels_data = np.asarray(stroke_labels_arr)
-    stroke_points_data = np.asarray(stroke_points_arr)
-    np.save("data/stroke_points.npy", stroke_points_data)
-    np.save("data/stroke_labels.npy", stroke_labels_data)
+    # Save the stroke points and labels to an NPZ file.
+    np.savez(
+        f"data/{stroke_type}",
+        points=stroke_points_arr,
+        labels=stroke_labels_arr,
+    )
 
     return stroke_labels_arr, stroke_points_arr
 
@@ -75,4 +87,4 @@ if __name__ == "__main__":
     numbers_dir = Path(
         "../datasets/ICRGL/ONLINE/CHARACTERS/NUMBER/all image info-number"
     )
-    print(extract_preprocess_data(numbers_dir))
+    print(extract_preprocess_data(numbers_dir, "numbers"))
