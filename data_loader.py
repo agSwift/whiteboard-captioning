@@ -8,8 +8,7 @@ import numpy.typing as npt
 def extract_preprocess_data(
     stroke_file_dir: Path, stroke_type: str
 ) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.int_]]:
-    """
-    Extracts and preprocesses the stroke data from the given stroke file directory.
+    """Extracts and preprocesses the stroke data from the given stroke file directory.
 
     Args:
         stroke_file_dir (Path): The directory containing the stroke files.
