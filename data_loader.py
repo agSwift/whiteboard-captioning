@@ -50,7 +50,7 @@ def extract_preprocess_data(
 
     assert len(stroke_points) == len(stroke_labels)
 
-    # Convert the stroke points to a numpy array, where -1 is used to represent a missing point.
+    # Create a numpy array to store the stroke points, where -1 represents a missing point.
     stroke_points_arr = np.full(
         (len(stroke_points), max_num_stroke_points, 2), -1, dtype=np.int_
     )
@@ -60,7 +60,14 @@ def extract_preprocess_data(
     # Convert the stroke labels to a numpy array.
     stroke_labels_arr = np.array(stroke_labels, dtype=np.int_)
 
-    # TODO: Store these into a file.
+    # Save the stroke labels and points to a numpy file.
+    Path("data").mkdir(parents=True, exist_ok=True)
+
+    stroke_labels_data = np.asarray(stroke_labels_arr)
+    stroke_points_data = np.asarray(stroke_points_arr)
+    np.save("data/stroke_points.npy", stroke_points_data)
+    np.save("data/stroke_labels.npy", stroke_labels_data)
+
     return stroke_labels_arr, stroke_points_arr
 
 
