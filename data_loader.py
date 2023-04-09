@@ -11,13 +11,13 @@ def extract_preprocess_data(
     """Extracts and preprocesses the stroke data from the given stroke file directory.
 
     Args:
-        stroke_file_dir (Path): The directory containing the stroke files.
+        stroke_file_dir (Path): The directory containing the stroke text files.
         stroke_type (str): The type of stroke data (e.g. "numbers").
 
     Returns:
         A tuple containing the stroke labels and points.
     """
-    # Get all txt files in the stroke file directory.
+    # Get all text files in the stroke file directory.
     stroke_files = list(stroke_file_dir.glob("*.txt"))
 
     stroke_points = []
@@ -83,6 +83,7 @@ def extract_preprocess_data(
 
 
 if __name__ == "__main__":
+    # “ISGL Character Recognition Dataset”: https://data.mendeley.com/datasets/n7kmd7t7yx/1
     numbers_dir = Path(
         "../datasets/ICRGL/ONLINE/CHARACTERS/NUMBER/all image info-number"
     )
