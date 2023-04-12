@@ -91,7 +91,7 @@ def extract_isgl_data(
         stroke_labels
     ), "The number of stroke points and labels must be equal."
 
-    # Create a numpy array to store the stroke points, where -1 represents a missing point.
+    # Create a numpy array to store the stroke points, where each row is a file. The points are padded with [-1, -1].
     stroke_points_arr = np.full(
         (len(stroke_points), max_num_stroke_points, 2), -1, dtype=np.int_
     )
@@ -105,7 +105,7 @@ def extract_isgl_data(
     Path("data").mkdir(parents=True, exist_ok=True)
 
     # Save the stroke points and labels to an NPZ file.
-    np.savez(
+    np.savez_compressed(
         f"data/{stroke_type}",
         points=stroke_points_arr,
         labels=stroke_labels_arr,
