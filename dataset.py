@@ -10,7 +10,7 @@ ALL_CHARS = string.ascii_letters + string.digits
 
 
 class StrokeDataset(Dataset):
-    """A PyTorch Dataset class for the stroke data."""
+    """A PyTorch Dataset class for the stroke data (points and labels)."""
 
     def __init__(
         self, *, numbers_data: Any, lowercase_data: Any, uppercase_data: Any
