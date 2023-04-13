@@ -6,45 +6,47 @@ https://data.mendeley.com/datasets/n7kmd7t7yx/1
 import re
 from pathlib import Path
 
+from enum import Enum
 import numpy as np
 import numpy.typing as npt
 
-ISGL_DATA_DIR_PATHS = {
-    "numbers": Path(
+
+class IsglDataPath(Enum):
+    """ISGL stroke data directory paths."""
+
+    NUMBERS = Path(
         "../datasets/ICRGL/ONLINE/CHARACTERS/NUMBER/all image info-number"
-    ),
-    "lowercase": Path(
+    )
+    LOWERCASE = Path(
         "../datasets/ICRGL/ONLINE/CHARACTERS/LOWER/all image info- lower case"
-    ),
-    "uppercase": Path(
+    )
+    UPPERCASE = Path(
         "../datasets/ICRGL/ONLINE/CHARACTERS/CAPITAL/capital_all image info"
-    ),
-}
+    )
 
 
 def extract_isgl_data(
-    stroke_type: str,
+    stroke_data_path: IsglDataPath,
 ) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.str_]]:
     """Extracts the stroke data from the given stroke file directory, and saves it to an NPZ file.
 
     Args:
-        stroke_type (str): The type of stroke data to extract. Must be one of
-            'numbers', 'lowercase', or 'uppercase'.
+        stroke_data_path (IsglDataPath): The stroke data directory path to extract data from.
 
     Returns:
         A tuple containing the stroke points and labels.
 
     Raises:
-        ValueError: If the stroke type is invalid.
+        ValueError: If the stroke data path is invalid.
     """
-    if stroke_type not in ISGL_DATA_DIR_PATHS:
+    if not isinstance(stroke_data_path, IsglDataPath):
         raise ValueError(
-            f"Invalid stroke type: {stroke_type}. "
-            f"Must be one of {list(ISGL_DATA_DIR_PATHS.keys())}."
+            f"Invalid stroke type: {stroke_data_path}. "
+            f"Must be one of {[path.name for path in IsglDataPath]}."
         )
 
     # Get all text files in the stroke file directory.
-    stroke_file_dir = ISGL_DATA_DIR_PATHS[stroke_type]
+    stroke_file_dir = stroke_data_path.value
     stroke_files = list(stroke_file_dir.glob("*.txt"))
 
     stroke_points = []
@@ -107,7 +109,7 @@ def extract_isgl_data(
 
     # Save the stroke points and labels to an NPZ file.
     np.savez_compressed(
-        f"data/{stroke_type}",
+        f"data/{stroke_data_path.name.lower()}",
         points=stroke_points_arr,
         labels=stroke_labels_arr,
     )
