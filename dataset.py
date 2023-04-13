@@ -26,18 +26,12 @@ class StrokeDataset(Dataset):
         Raises:
             ValueError: If the stroke data is invalid.
         """
-        if "points" not in numbers_data or "labels" not in numbers_data:
-            raise ValueError(
-                "Invalid numbers data. Must contain 'points' and 'labels' keys."
-            )
-        if "points" not in lowercase_data or "labels" not in lowercase_data:
-            raise ValueError(
-                "Invalid lowercase data. Must contain 'points' and 'labels' keys."
-            )
-        if "points" not in uppercase_data or "labels" not in uppercase_data:
-            raise ValueError(
-                "Invalid uppercase data. Must contain 'points' and 'labels' keys."
-            )
+        for data in [numbers_data, lowercase_data, uppercase_data]:
+            if "points" not in data or "labels" not in data:
+                raise ValueError(
+                    f"Invalid {data}. Must contain 'points' and 'labels' keys."
+                )
+
         numbers_points = numbers_data["points"]
         lowercase_points = lowercase_data["points"]
         uppercase_points = uppercase_data["points"]
@@ -71,7 +65,7 @@ class StrokeDataset(Dataset):
             )
         )
 
-        # Convert the labels to one-hot tensors and concatenate them.
+        # Perform one-hot encoding on the labels and concatenate them into a single array.
         numbers_labels = numbers_data["labels"]
         lowercase_labels = lowercase_data["labels"]
         uppercase_labels = uppercase_data["labels"]

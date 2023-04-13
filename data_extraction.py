@@ -91,7 +91,8 @@ def extract_isgl_data(
         stroke_labels
     ), "The number of stroke points and labels must be equal."
 
-    # Create a numpy array to store the stroke points, where each row is a file. The points are padded with [-1, -1].
+    # Create a numpy array to store the stroke points, where each row is a file.
+    # The points are padded with [-1, -1] to make them all the same length.
     stroke_points_arr = np.full(
         (len(stroke_points), max_num_stroke_points, 2), -1, dtype=np.int_
     )
