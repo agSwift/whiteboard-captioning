@@ -18,7 +18,23 @@ LEARNING_RATE = 3e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def train_model(model):
+def train_model(model: torch.nn.Module):
+    """Trains the given model.
+
+    Args:
+        model (torch.nn.Module): The model to train.
+
+    Raises:
+        ValueError: If the model is invalid.
+
+    Returns:
+        None.
+    """
+    if not isinstance(model, torch.nn.Module):
+        raise ValueError(
+            f"Invalid model: {model}. Must be an instance of {torch.nn.Module}."
+        )
+
     print(f"Training model: {model}")
 
     # Create data loaders for the training, validation and test sets.
@@ -100,19 +116,15 @@ def train_model(model):
 
         print(
             f"Test accuracy of the model on the {total} "
-            f"test points: {100 * correct / total:.2f} %"
+            f"test points: {100 * correct / total:.2f} %",
+            end="\n\n",
         )
 
 
 if __name__ == "__main__":
     # Extract all stroke data and create a dataset.
-    data_extraction.extract_all_data()
-
-    stroke_dataset = dataset.StrokeDataset(
-        numbers_data=np.load("data/numbers.npz"),
-        lowercase_data=np.load("data/lowercase.npz"),
-        uppercase_data=np.load("data/uppercase.npz"),
-    )
+    data_path = data_extraction.extract_all_data()
+    stroke_dataset = dataset.StrokeDataset(np.load(str(data_path)))
 
     # Split dataset into training, validation and test sets.
     dataset_size = len(stroke_dataset)
@@ -151,15 +163,15 @@ if __name__ == "__main__":
         device=DEVICE,
     )
 
-    # Train the models.
-    train_model(rnn_model)
-    train_model(gru_model)
-    train_model(lstm_model)
-
     # Create a models directory if it doesn't exist.
     Path("models").mkdir(parents=True, exist_ok=True)
 
-    # Save the models.
+    # Train and save the models.
+    train_model(rnn_model)
     torch.save(rnn_model.state_dict(), "models/rnn_model.ckpt")
+
+    train_model(gru_model)
     torch.save(gru_model.state_dict(), "models/gru_model.ckpt")
+
+    train_model(lstm_model)
     torch.save(lstm_model.state_dict(), "models/lstm_model.ckpt")

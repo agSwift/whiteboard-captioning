@@ -8,6 +8,7 @@ from pathlib import Path
 
 from enum import Enum
 import numpy as np
+import numpy.typing as npt
 
 
 class IsglDataDirPath(Enum):
@@ -24,16 +25,16 @@ class IsglDataDirPath(Enum):
     )
 
 
-def _extract_data_from_dir_to_npz(
+def _extract_data_from_dir(
     stroke_data_dir_path: IsglDataDirPath,
-) -> None:
-    """Extracts the stroke data from the given stroke file directory, and saves it to an NPZ file.
+) -> tuple[npt.NDArray[np.float_], npt.NDArray[np.str_]]:
+    """Extracts the stroke points and labels from the stroke file directory.
 
     Args:
         stroke_data_dir_path (IsglDataDirPath): The stroke file directory path.
 
     Returns:
-        None.
+        The stroke points and labels.
 
     Raises:
         ValueError: If the stroke data directory path is invalid.
@@ -52,7 +53,7 @@ def _extract_data_from_dir_to_npz(
 
     # The maximum number of points seen in a stroke file.
     # This is used to pad the stroke points array.
-    max_num_stroke_points = 0
+    max_num_points = 0
 
     # Go through each stroke file.
     for file_idx, stroke_file in enumerate(stroke_files):
@@ -61,10 +62,10 @@ def _extract_data_from_dir_to_npz(
             f"Must be a text file with the '.txt' extension."
         )
 
-        num_stroke_points = 0
+        num_points = 0
         with open(stroke_file, "r", encoding="utf-8") as file:
             # The first line is the digit/character label.
-            stroke_label = file.readline().rstrip()
+            file_label = file.readline().rstrip()
 
             # The remaining lines are potential stroke points.
             file_points = []
@@ -73,7 +74,7 @@ def _extract_data_from_dir_to_npz(
 
                 # Check if the line is a point.
                 if re.fullmatch(r"[0-9]+\_[0-9]+", line):
-                    num_stroke_points += 1
+                    num_points += 1
 
                     x_coord, y_coord = line.split("_")
                     file_points.append((int(x_coord), int(y_coord)))
@@ -83,9 +84,9 @@ def _extract_data_from_dir_to_npz(
             continue
 
         stroke_points.append(file_points)
-        stroke_labels.append(stroke_label)
+        stroke_labels.append(file_label)
 
-        max_num_stroke_points = max(max_num_stroke_points, num_stroke_points)
+        max_num_points = max(max_num_points, num_points)
 
     assert len(stroke_points) == len(
         stroke_labels
@@ -94,7 +95,7 @@ def _extract_data_from_dir_to_npz(
     # Create a numpy array to store the stroke points, where each row is a file.
     # The points are padded with [-1, -1] to make them all the same length.
     stroke_points_arr = np.full(
-        (len(stroke_points), max_num_stroke_points, 2), -1, dtype=np.float32
+        (len(stroke_points), max_num_points, 2), -1, dtype=np.float_
     )
     for file_idx, file_points in enumerate(stroke_points):
         stroke_points_arr[file_idx, : len(file_points)] = file_points
@@ -102,22 +103,72 @@ def _extract_data_from_dir_to_npz(
     # Convert the stroke labels to a numpy array.
     stroke_labels_arr = np.array(stroke_labels, dtype=np.str_)
 
+    return stroke_points_arr, stroke_labels_arr
+
+
+def _pad_stroke_points(
+    stroke_points: npt.NDArray[np.int_], max_num_stroke_points: int
+) -> npt.NDArray[np.int_]:
+    """Pads the array with [-1, -1] to have a second dimension length of max_num_stroke_points.
+
+    Args:
+        stroke_points (npt.NDArray[np.int_]): The array to pad.
+        max_num_stroke_points (int): The length to pad the array to.
+
+    Returns:
+        The padded array.
+    """
+    return np.pad(
+        stroke_points,
+        (
+            (0, 0),
+            (0, max_num_stroke_points - stroke_points.shape[1]),
+            (0, 0),
+        ),
+        "constant",
+        constant_values=-1,
+    )
+
+
+def extract_all_data() -> Path:
+    """Extracts the stroke data from all stroke file directories, and saves it to an NPZ file.
+
+    Returns:
+        The path to the NPZ file.
+    """
+    all_points = []
+    all_labels = []
+
+    for data_dir_path in IsglDataDirPath:
+        points, labels = _extract_data_from_dir(data_dir_path)
+        all_points.append(points)
+        all_labels.append(labels)
+
+    # Get the maximum number of stroke points across all data directories.
+    max_num_stroke_points = max(points.shape[1] for points in all_points)
+
+    # Pad the stroke points arrays.
+    all_points = [
+        _pad_stroke_points(points, max_num_stroke_points)
+        for points in all_points
+    ]
+
+    # Concatenate the stroke points and labels arrays.
+    all_points = np.concatenate(all_points, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
+
     # Create a data directory if it doesn't exist.
     Path("data").mkdir(parents=True, exist_ok=True)
 
     # Save the stroke points and labels to an NPZ file.
     np.savez_compressed(
-        f"data/{stroke_data_dir_path.name.lower()}",
-        points=stroke_points_arr,
-        labels=stroke_labels_arr,
+        "data/isgl_data",
+        points=all_points,
+        labels=all_labels,
     )
 
+    assert Path(
+        "data/isgl_data.npz"
+    ).is_file(), "The stroke points and labels were not saved to an NPZ file."
 
-def extract_all_data() -> None:
-    """Extracts the stroke data from all stroke file directories, and saves it to NPZ files.
-    
-    Returns:
-        None.
-    """
-    for data_dir_path in IsglDataDirPath:
-        _extract_data_from_dir_to_npz(data_dir_path)
+    return Path("data/isgl_data.npz")
