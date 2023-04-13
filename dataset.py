@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import numpy.typing as npt
 from torch.utils.data import Dataset
+from numpy.lib.npyio import NpzFile
 
 ALL_CHARS = string.ascii_letters + string.digits
 
@@ -13,15 +14,18 @@ class StrokeDataset(Dataset):
     """A PyTorch Dataset class for the stroke data (points and labels)."""
 
     def __init__(
-        self, *, numbers_data: Any, lowercase_data: Any, uppercase_data: Any
+        self,
+        *,
+        numbers_data: NpzFile,
+        lowercase_data: NpzFile,
+        uppercase_data: NpzFile,
     ):
-        # TODO: Add type hints for npz data inputs.
         """Initializes the StrokeDataset class.
 
         Args:
-            numbers_data (Any): The stroke data for the numbers.
-            lowercase_data (Any): The stroke data for the lowercase letters.
-            uppercase_data (Any): The stroke data for the uppercase letters.
+            numbers_data (NpzFile): The stroke data for the numbers.
+            lowercase_data (NpzFile): The stroke data for the lowercase letters.
+            uppercase_data (NpzFile): The stroke data for the uppercase letters.
 
         Raises:
             ValueError: If the stroke data is invalid.
@@ -121,10 +125,10 @@ class StrokeDataset(Dataset):
         Returns:
             The one-hot tensor.
         """
-        tensor = torch.zeros(1, len(ALL_CHARS))
+        tensor = torch.zeros(len(ALL_CHARS))
 
         char_idx = ALL_CHARS.find(char)
-        tensor[0][char_idx] = 1
+        tensor[char_idx] = 1
 
         return tensor
 

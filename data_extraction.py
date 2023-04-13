@@ -11,8 +11,8 @@ import numpy as np
 import numpy.typing as npt
 
 
-class IsglDataPath(Enum):
-    """ISGL stroke data directory paths."""
+class IsglDataDirPath(Enum):
+    """An enum class for the ISGL dataset stroke file directory paths."""
 
     NUMBERS = Path(
         "../datasets/ICRGL/ONLINE/CHARACTERS/NUMBER/all image info-number"
@@ -25,29 +25,28 @@ class IsglDataPath(Enum):
     )
 
 
-def extract_isgl_data(
-    stroke_data_path: IsglDataPath,
-) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.str_]]:
+def _extract_data_from_dir_to_npz(
+    stroke_data_dir_path: IsglDataDirPath,
+) -> None:
     """Extracts the stroke data from the given stroke file directory, and saves it to an NPZ file.
 
     Args:
-        stroke_data_path (IsglDataPath): The stroke data directory path to extract data from.
+        stroke_data_dir_path (IsglDataDirPath): The stroke file directory path.
 
     Returns:
-        A tuple containing the stroke points and labels.
+        None.
 
     Raises:
-        ValueError: If the stroke data path is invalid.
+        ValueError: If the stroke data directory path is invalid.
     """
-    if not isinstance(stroke_data_path, IsglDataPath):
+    if not isinstance(stroke_data_dir_path, IsglDataDirPath):
         raise ValueError(
-            f"Invalid stroke type: {stroke_data_path}. "
-            f"Must be one of {[path.name for path in IsglDataPath]}."
+            f"Invalid stroke data directory path: {stroke_data_dir_path}. "
+            f"Must be an instance of {IsglDataDirPath}."
         )
 
     # Get all text files in the stroke file directory.
-    stroke_file_dir = stroke_data_path.value
-    stroke_files = list(stroke_file_dir.glob("*.txt"))
+    stroke_files = list(stroke_data_dir_path.value.glob("*.txt"))
 
     stroke_points = []
     stroke_labels = []
@@ -77,8 +76,8 @@ def extract_isgl_data(
                 if re.fullmatch(r"[0-9]+\_[0-9]+", line):
                     num_stroke_points += 1
 
-                    x, y = line.split("_")
-                    file_points.append((int(x), int(y)))
+                    x_coord, y_coord = line.split("_")
+                    file_points.append((int(x_coord), int(y_coord)))
 
         # Check if the file contains any stroke points.
         if not file_points:
@@ -96,7 +95,7 @@ def extract_isgl_data(
     # Create a numpy array to store the stroke points, where each row is a file.
     # The points are padded with [-1, -1] to make them all the same length.
     stroke_points_arr = np.full(
-        (len(stroke_points), max_num_stroke_points, 2), -1, dtype=np.int_
+        (len(stroke_points), max_num_stroke_points, 2), -1, dtype=np.float32
     )
     for file_idx, file_points in enumerate(stroke_points):
         stroke_points_arr[file_idx, : len(file_points)] = file_points
@@ -109,9 +108,12 @@ def extract_isgl_data(
 
     # Save the stroke points and labels to an NPZ file.
     np.savez_compressed(
-        f"data/{stroke_data_path.name.lower()}",
+        f"data/{stroke_data_dir_path.name.lower()}",
         points=stroke_points_arr,
         labels=stroke_labels_arr,
     )
 
-    return stroke_points_arr, stroke_labels_arr
+
+def extract_all_data() -> None:
+    for data_dir_path in IsglDataDirPath:
+        _extract_data_from_dir_to_npz(data_dir_path)
