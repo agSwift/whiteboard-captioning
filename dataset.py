@@ -1,6 +1,5 @@
 """Contains the StrokeDataset class, which is used to load the stroke data from the .npz files."""
 import string
-from typing import Any
 import torch
 import numpy as np
 import numpy.typing as npt

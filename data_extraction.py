@@ -8,7 +8,6 @@ from pathlib import Path
 
 from enum import Enum
 import numpy as np
-import numpy.typing as npt
 
 
 class IsglDataDirPath(Enum):
@@ -115,5 +114,10 @@ def _extract_data_from_dir_to_npz(
 
 
 def extract_all_data() -> None:
+    """Extracts the stroke data from all stroke file directories, and saves it to NPZ files.
+    
+    Returns:
+        None.
+    """
     for data_dir_path in IsglDataDirPath:
         _extract_data_from_dir_to_npz(data_dir_path)
