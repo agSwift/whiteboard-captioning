@@ -1,6 +1,8 @@
+"""Used to train the models."""
 from pathlib import Path
+from enum import Enum
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 import numpy as np
 import data_extraction
@@ -18,24 +20,48 @@ LEARNING_RATE = 3e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def train_model(model: torch.nn.Module):
+class ModelType(Enum):
+    """An enum for the model types."""
+
+    RNN = rnn.RNN
+    LSTM = rnn.LSTM
+    GRU = rnn.GRU
+
+
+def train_model(
+    *,
+    model_type: ModelType,
+    train_dataset: Subset,
+    val_dataset: Subset,
+    test_dataset: Subset,
+):
     """Trains the given model.
 
     Args:
-        model (torch.nn.Module): The model to train.
+        model_type (ModelType): The model type to train.
+        train_dataset (Subset): The training dataset.
+        val_dataset (Subset): The validation dataset.
+        test_dataset (Subset): The test dataset.
 
     Raises:
-        ValueError: If the model is invalid.
+        ValueError: If the model type is invalid.
 
     Returns:
         None.
     """
-    if not isinstance(model, torch.nn.Module):
+    if not isinstance(model_type, ModelType):
         raise ValueError(
-            f"Invalid model: {model}. Must be an instance of {torch.nn.Module}."
+            f"Invalid model type: {model_type}. Must be an instance of {ModelType}."
         )
 
-    print(f"Training model: {model}")
+    print(f"Training model: {model_type.name}")
+    model = model_type.value(
+        input_size=INPUT_SIZE,
+        hidden_size=HIDDEN_SIZE,
+        num_layers=NUM_LAYERS,
+        num_classes=NUM_CLASSES,
+        device=DEVICE,
+    )
 
     # Create data loaders for the training, validation and test sets.
     train_loader = DataLoader(
@@ -120,11 +146,24 @@ def train_model(model: torch.nn.Module):
             end="\n\n",
         )
 
+    # Create a models directory if it doesn't exist.
+    Path("models").mkdir(parents=True, exist_ok=True)
+
+    # Save the model.
+    torch.save(
+        model.state_dict(), f"models/{model_type.name.lower()}_model.ckpt"
+    )
+
 
 if __name__ == "__main__":
-    # Extract all stroke data and create a dataset.
-    data_path = data_extraction.extract_all_data()
-    stroke_dataset = dataset.StrokeDataset(np.load(str(data_path)))
+    # Extract the data if it hasn't been extracted yet.
+    if not data_extraction.EXTRACTED_DATA_PATH.exists():
+        data_extraction.extract_all_data()
+
+    # Create the dataset.
+    stroke_dataset = dataset.StrokeDataset(
+        np.load(str(data_extraction.EXTRACTED_DATA_PATH))
+    )
 
     # Split dataset into training, validation and test sets.
     dataset_size = len(stroke_dataset)
@@ -132,46 +171,14 @@ if __name__ == "__main__":
     val_size = int(0.1 * dataset_size)
     test_size = dataset_size - train_size - val_size
 
-    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
+    train_set, val_set, test_set = torch.utils.data.random_split(
         stroke_dataset, [train_size, val_size, test_size]
     )
 
-    # Create the RNN model.
-    rnn_model = rnn.RNN(
-        input_size=INPUT_SIZE,
-        hidden_size=HIDDEN_SIZE,
-        num_layers=NUM_LAYERS,
-        num_classes=NUM_CLASSES,
-        device=DEVICE,
+    # Train the RNN model.
+    train_model(
+        model_type=ModelType.RNN,
+        train_dataset=train_set,
+        val_dataset=val_set,
+        test_dataset=test_set,
     )
-
-    # Create the GRU model.
-    gru_model = rnn.GRU(
-        input_size=INPUT_SIZE,
-        hidden_size=HIDDEN_SIZE,
-        num_layers=NUM_LAYERS,
-        num_classes=NUM_CLASSES,
-        device=DEVICE,
-    )
-
-    # Create the LSTM model.
-    lstm_model = rnn.LSTM(
-        input_size=INPUT_SIZE,
-        hidden_size=HIDDEN_SIZE,
-        num_layers=NUM_LAYERS,
-        num_classes=NUM_CLASSES,
-        device=DEVICE,
-    )
-
-    # Create a models directory if it doesn't exist.
-    Path("models").mkdir(parents=True, exist_ok=True)
-
-    # Train and save the models.
-    train_model(rnn_model)
-    torch.save(rnn_model.state_dict(), "models/rnn_model.ckpt")
-
-    train_model(gru_model)
-    torch.save(gru_model.state_dict(), "models/gru_model.ckpt")
-
-    train_model(lstm_model)
-    torch.save(lstm_model.state_dict(), "models/lstm_model.ckpt")

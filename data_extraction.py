@@ -10,6 +10,8 @@ from enum import Enum
 import numpy as np
 import numpy.typing as npt
 
+EXTRACTED_DATA_PATH = Path("data/isgl_data.npz")
+
 
 class IsglDataDirPath(Enum):
     """An enum class for the ISGL dataset stroke file directory paths."""
@@ -130,11 +132,11 @@ def _pad_stroke_points(
     )
 
 
-def extract_all_data() -> Path:
+def extract_all_data() -> None:
     """Extracts the stroke data from all stroke file directories, and saves it to an NPZ file.
 
     Returns:
-        The path to the NPZ file.
+        None.
     """
     all_points = []
     all_labels = []
@@ -162,13 +164,11 @@ def extract_all_data() -> Path:
 
     # Save the stroke points and labels to an NPZ file.
     np.savez_compressed(
-        "data/isgl_data",
+        str(EXTRACTED_DATA_PATH),
         points=all_points,
         labels=all_labels,
     )
 
-    assert Path(
-        "data/isgl_data.npz"
-    ).is_file(), "The stroke points and labels were not saved to an NPZ file."
-
-    return Path("data/isgl_data.npz")
+    assert (
+        EXTRACTED_DATA_PATH.is_file()
+    ), "The stroke points and labels were not saved to an NPZ file."
