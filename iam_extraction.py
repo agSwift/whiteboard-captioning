@@ -3,10 +3,11 @@
 The database can be downloaded from:
 https://fki.tic.heia-fr.ch/databases/iam-on-line-handwriting-database.
 
-Manually removed files from the dataset:
-z01-000z.txt (and it's respective stroke XML files), a08-551z-08.xml, a08-551z-09.xml.
+The following files were filtered out when extracting the data, as they are invalid or missing data:
+a08-551z-08.xml, a08-551z-09.xml, and all z01-000z stroke XML files.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 import os
@@ -16,6 +17,15 @@ LINE_STROKES_DATA_DIR = Path("../datasets/IAM/lineStrokes")
 LINE_LABELS_DATA_DIR = Path("../datasets/IAM/ascii")
 
 EXTRACTED_DATA_PATH = Path("data/iam_data.npz")
+
+
+@dataclass
+class StrokeData:
+    """A dataclass for the stroke data."""
+
+    x_points: list[float]
+    y_points: list[float]
+    time_stamps: list[float]
 
 
 def _get_label_from_stroke_file(stroke_file: Path) -> Optional[str]:
@@ -100,6 +110,128 @@ def _get_label_from_stroke_file(stroke_file: Path) -> Optional[str]:
     return None
 
 
+def _parse_stroke_element(
+    stroke: ET.Element,
+) -> StrokeData:
+    """Parses the stroke element.
+
+    Args:
+        stroke (ET.Element): The stroke element.
+
+    Returns:
+        The stroke data, which contains the x points, y points, and time stamps.
+
+    Raises:
+        ValueError: If the stroke element is invalid.
+    """
+    # Check if the stroke element is valid.
+    if not isinstance(stroke, ET.Element):
+        raise ValueError(
+            f"Invalid stroke ET element: {stroke}. Must be an instance of {ET.Element}."
+        )
+
+    x_points = []
+    y_points = []
+    time_stamps = []
+    fst_timestamp = 0
+
+    # Go through each point in the stroke.
+    for point in stroke.findall("Point"):
+        x_points.append(float(point.attrib["x"]))
+        y_points.append(float(point.attrib["y"]))
+
+        if not time_stamps:
+            # Ensure first time stamp is 0, not the actual time stamp.
+            fst_timestamp = float(point.attrib["time"])
+            time_stamps.append(0)
+        else:
+            time_stamps.append(float(point.attrib["time"]) - fst_timestamp)
+
+    assert len(x_points) == len(y_points) == len(time_stamps), (
+        f"Invalid stroke ET element: {stroke}. "
+        f"Number of x points, y points, and time stamps must be equal."
+    )
+
+    return StrokeData(x_points, y_points, time_stamps)
+
+
+def _get_data_from_stroke_file(
+    stroke_file: Path,
+) -> list[StrokeData]:
+    """Gets the data from the stroke file.
+
+    Args:
+        stroke_file (Path): The stroke file path.
+
+    Returns:
+        The list of stroke data.
+
+    Raises:
+        ValueError: If the stroke file is invalid.
+        FileNotFoundError: If the stroke file is not found.
+        ValueError: If the stroke file is not an XML file.
+    """
+    # Check if the stroke file is valid.
+    if not isinstance(stroke_file, Path):
+        raise ValueError(
+            f"Invalid stroke file: {stroke_file}. Must be an instance of {Path}."
+        )
+
+    if not stroke_file.is_file():
+        raise FileNotFoundError(f"Stroke file not found: {stroke_file}.")
+
+    if stroke_file.suffix != ".xml":
+        raise ValueError(
+            f"Invalid stroke file: {stroke_file}. Must be an XML file."
+        )
+
+    tree = ET.parse(stroke_file)
+    root = tree.getroot()
+    stroke_set = root.find("StrokeSet")
+
+    strokes = [
+        _parse_stroke_element(stroke)
+        for stroke in stroke_set.findall("Stroke")
+    ]
+
+    # Normalize the strokes.
+    max_y = float(
+        root.find("WhiteboardDescription/DiagonallyOppositeCoords").attrib["y"]
+    )
+
+    for stroke in strokes:
+        min_x = min(stroke.x_points)
+        min_y = min(stroke.y_points)
+
+        # Shift x and y points to start at 0.
+        stroke.x_points = [x - min_x for x in stroke.x_points]
+        stroke.y_points = [y - min_y for y in stroke.y_points]
+
+        # Scale points so that the y_points are between 0 and 1. The x_points will be scaled
+        # by the same amount, to preserve the aspect ratio.
+        scale = (
+            1 if max_y - min_y == 0 else 1 / (max_y - min_y)
+        )  # Avoid division by 0.
+
+        stroke.x_points = [x * scale for x in stroke.x_points]
+        stroke.y_points = [y * scale for y in stroke.y_points]
+
+        assert all(0 <= y <= 1 for y in stroke.y_points), (
+            f"Invalid stroke file: {stroke_file}. "
+            f"All y-points must be between 0 and 1."
+        )
+
+    assert all(
+        len(stroke.x_points) == len(stroke.y_points) == len(stroke.time_stamps)
+        for stroke in strokes
+    ), (
+        f"Invalid stroke file: {stroke_file}. "
+        f"Number of x points, y points, and time stamps must be equal."
+    )
+
+    return strokes
+
+
 def extract_all_data() -> None:
     all_stroke_data = []
     all_labels = []
@@ -112,6 +244,10 @@ def extract_all_data() -> None:
             Path(root) / Path(file)
             for file in stroke_files
             if file.endswith(".xml")
+            # Don't include these files. They are invalid or missing data.
+            and not file.startswith("z01-000z")
+            and not file.startswith("a08-551z-08")
+            and not file.startswith("a08-551z-09")
         ]
         stroke_files.sort()
 
@@ -122,30 +258,7 @@ def extract_all_data() -> None:
                 break
 
             all_labels.append(label)
-
-            # Parse the stroke file.
-            stroke_tree = ET.parse(stroke_file)
-            stroke_tree_root = stroke_tree.getroot()
-
-            # Go through each stroke in the stroke file.
-            for stroke in stroke_tree_root.findall("StrokeSet/Stroke"):
-                x_points = []
-                y_points = []
-                time_stamps = []
-                fst_timestamp = 0
-
-                # Go through each point in the stroke.
-                for point in stroke.findall("Point"):
-                    x_points.append(float(point.attrib["x"]))
-                    y_points.append(float(point.attrib["y"]))
-
-                    if not time_stamps:
-                        fst_timestamp = float(point.attrib["time"])
-                        time_stamps.append(0)
-                    else:
-                        time_stamps.append(
-                            float(point.attrib["time"]) - fst_timestamp
-                        )
+            strokes = _get_data_from_stroke_file(stroke_file)
 
 
 extract_all_data()
