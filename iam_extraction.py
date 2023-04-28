@@ -10,8 +10,13 @@ a08-551z-08.xml, a08-551z-09.xml, and all z01-000z stroke XML files.
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
 import os
 import xml.etree.ElementTree as ET
+import numpy as np
+
+from bezier import Bezier
+
 
 LINE_STROKES_DATA_DIR = Path("../datasets/IAM/lineStrokes")
 LINE_LABELS_DATA_DIR = Path("../datasets/IAM/ascii")
@@ -26,6 +31,7 @@ class StrokeData:
     x_points: list[float]
     y_points: list[float]
     time_stamps: list[float]
+    pen_ups: list[int]  # 0 if pen is down, 1 if pen is up (end of stroke).
 
 
 def _get_label_from_stroke_file(stroke_file: Path) -> Optional[str]:
@@ -110,16 +116,14 @@ def _get_label_from_stroke_file(stroke_file: Path) -> Optional[str]:
     return None
 
 
-def _parse_stroke_element(
-    stroke: ET.Element,
-) -> StrokeData:
+def _parse_stroke_element(stroke: ET.Element,) -> StrokeData:
     """Parses the stroke element.
 
     Args:
         stroke (ET.Element): The stroke element.
 
     Returns:
-        The stroke data, which contains the x points, y points, and time stamps.
+        The stroke data, which contains the x points, y points, time stamps, and pen_ups information.
 
     Raises:
         ValueError: If the stroke element is invalid.
@@ -133,10 +137,11 @@ def _parse_stroke_element(
     x_points = []
     y_points = []
     time_stamps = []
+    pen_ups = []
     fst_timestamp = 0
 
     # Go through each point in the stroke.
-    for point in stroke.findall("Point"):
+    for i, point in enumerate(stroke.findall("Point")):
         x_points.append(float(point.attrib["x"]))
         y_points.append(float(point.attrib["y"]))
 
@@ -147,17 +152,24 @@ def _parse_stroke_element(
         else:
             time_stamps.append(float(point.attrib["time"]) - fst_timestamp)
 
-    assert len(x_points) == len(y_points) == len(time_stamps), (
-        f"Invalid stroke ET element: {stroke}. "
-        f"Number of x points, y points, and time stamps must be equal."
+        if i == len(stroke.findall("Point")) - 1:
+            # If this is the last point in the stroke, the pen is up.
+            pen_ups.append(1)
+        else:
+            # If this is not the last point in the stroke, the pen is down.
+            pen_ups.append(0)
+
+    assert (
+        len(x_points) == len(y_points) == len(time_stamps) == len(pen_ups)
+    ), (
+        f"Invalid stroke element: {stroke}. "
+        "The number of x points, y points, time stamps, and pen ups must be equal."
     )
 
-    return StrokeData(x_points, y_points, time_stamps)
+    return StrokeData(x_points, y_points, time_stamps, pen_ups)
 
 
-def _get_data_from_stroke_file(
-    stroke_file: Path,
-) -> list[StrokeData]:
+def _get_data_from_stroke_file(stroke_file: Path,) -> list[StrokeData]:
     """Gets the data from the stroke file.
 
     Args:
@@ -222,14 +234,48 @@ def _get_data_from_stroke_file(
         )
 
     assert all(
-        len(stroke.x_points) == len(stroke.y_points) == len(stroke.time_stamps)
+        len(stroke.x_points)
+        == len(stroke.y_points)
+        == len(stroke.time_stamps)
+        == len(stroke.pen_ups)
         for stroke in strokes
     ), (
         f"Invalid stroke file: {stroke_file}. "
-        f"Number of x points, y points, and time stamps must be equal."
+        "The number of x points, y points, time stamps, and pen ups must be equal."
     )
 
     return strokes
+
+
+def _process_bezier_curve(
+    stroke: StrokeData, num_points: int = 100
+) -> StrokeData:
+    """Process the Bezier curve for the given stroke.
+
+    Args:
+        stroke (StrokeData): The stroke data.
+        num_points (int): The number of points to sample along the Bezier curve.
+
+    Returns:
+        The processed stroke data containing the Bezier curve points.
+    """
+    if len(stroke.x_points) < 2:
+        return stroke
+
+    points = np.column_stack((stroke.x_points, stroke.y_points))
+    bezier = Bezier(points)
+    t_values = np.linspace(0, 1, num_points)
+    bezier_points = bezier.get_points(t_values)
+
+    x_points = list(bezier_points[:, 0])
+    y_points = list(bezier_points[:, 1])
+    time_stamps = np.interp(
+        t_values,
+        np.linspace(0, 1, len(stroke.time_stamps)),
+        stroke.time_stamps,
+    ).tolist()
+
+    return StrokeData(x_points, y_points, time_stamps, stroke.end_stroke)
 
 
 def extract_all_data() -> None:
@@ -253,12 +299,18 @@ def extract_all_data() -> None:
 
         # Go through each stroke file in the directory.
         for stroke_file in stroke_files:
+            # Get the label from the stroke file.
             label = _get_label_from_stroke_file(stroke_file)
             if label is None:
                 break
-
             all_labels.append(label)
+
+            # Get the data from the stroke file.
             strokes = _get_data_from_stroke_file(stroke_file)
+
+            bezier_curves = [
+                _process_bezier_curve(stroke) for stroke in strokes
+            ]
 
 
 extract_all_data()
