@@ -11,8 +11,7 @@ class StrokeDataset(Dataset):
     """A PyTorch Dataset class for the stroke data (points and labels)."""
 
     def __init__(
-        self,
-        stroke_data: NpzFile,
+        self, stroke_data: NpzFile,
     ):
         """Initializes the StrokeDataset class.
 

@@ -5,15 +5,14 @@ import torch
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 import numpy as np
-import data_extraction
-import dataset
+import isgl
 import rnn
 
 # Hyperparameters.
 BATCH_SIZE = 64
 INPUT_SIZE = 2  # x and y coordinates.
 HIDDEN_SIZE = 64
-NUM_CLASSES = len(dataset.ALL_CHARS)
+NUM_CLASSES = len(isgl.dataset.ALL_CHARS)
 NUM_LAYERS = 2
 NUM_EPOCHS = 5
 LEARNING_RATE = 3e-4
@@ -157,12 +156,12 @@ def train_model(
 
 if __name__ == "__main__":
     # Extract the data if it hasn't been extracted yet.
-    if not data_extraction.EXTRACTED_DATA_PATH.exists():
-        data_extraction.extract_all_data()
+    if not isgl.extraction.EXTRACTED_DATA_PATH.exists():
+        isgl.extraction.extract_all_data()
 
     # Create the dataset.
-    stroke_dataset = dataset.StrokeDataset(
-        np.load(str(data_extraction.EXTRACTED_DATA_PATH))
+    stroke_dataset = isgl.dataset.StrokeDataset(
+        np.load(str(isgl.extraction.EXTRACTED_DATA_PATH))
     )
 
     # Split dataset into training, validation and test sets.

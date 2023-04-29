@@ -20,7 +20,6 @@ import scipy.optimize
 
 from tqdm import tqdm
 
-
 LINE_STROKES_DATA_DIR = Path("../datasets/IAM/lineStrokes")
 LINE_LABELS_DATA_DIR = Path("../datasets/IAM/ascii")
 
@@ -481,12 +480,12 @@ def extract_all_data() -> None:
 
     all_labels_arr = np.array(all_labels)
 
-    # Pad the Bezier curves data with zeros so that all strokes have the same number of curves.
+    # Pad the Bezier curves data with -1 so that all strokes have the same number of curves.
     max_num_curves = max(len(curves) for curves in all_bezier_curves_data)
     all_bezier_curves_arr = np.array(
         [
             np.concatenate(
-                (curves, np.zeros((max_num_curves - len(curves), 1, 10)),),
+                (curves, np.full((max_num_curves - len(curves), 1, 10), -1),),
                 axis=0,
             )
             for curves in all_bezier_curves_data
