@@ -303,7 +303,6 @@ def _fit_stroke_with_bezier_curve(
 
     Raises:
         ValueError: If the stroke data is invalid.
-        ValueError: If the stroke data has less than 2 points.
     """
     # Check if the stroke data is valid.
     if not isinstance(stroke, StrokeData):
@@ -313,9 +312,7 @@ def _fit_stroke_with_bezier_curve(
 
     # If there are less than 2 points, there is no Bézier curve to fit.
     if len(stroke.x_points) < 2:
-        raise ValueError(
-            f"Invalid stroke data: {stroke}. Must have at least 2 points."
-        )
+        return np.zeros((1, 10))
 
     # Combine x and y points into a single numpy array.
     points = np.column_stack((stroke.x_points, stroke.y_points))
@@ -473,32 +470,38 @@ def extract_all_data() -> None:
 
             # Get the strokes from the stroke file.
             strokes = _get_strokes_from_stroke_file(stroke_file)
-            valid_strokes = [
-                stroke for stroke in strokes if len(stroke.x_points) >= 2
-            ]  # Filter out strokes with less than 2 points.
-            stroke_counts.append(len(valid_strokes))
+            stroke_counts.append(len(strokes))
 
             # Compute the Bézier curves for the stroke file.
             bezier_curves_data = [
-                _fit_stroke_with_bezier_curve(stroke)
-                for stroke in valid_strokes
+                _fit_stroke_with_bezier_curve(stroke) for stroke in strokes
             ]
-            all_bezier_curves_data.extend(bezier_curves_data)
+
+            all_bezier_curves_data.append(bezier_curves_data)
 
     all_labels_arr = np.array(all_labels)
-    all_bezier_curves_arr = np.vstack(all_bezier_curves_data)
 
-    # Find the total number of Bézier curves generated from strokes with at least 2 points.
-    total_bezier_curves = sum(count >= 2 for count in stroke_counts)
+    # Pad the Bezier curves data with zeros so that all strokes have the same number of curves.
+    max_num_curves = max(len(curves) for curves in all_bezier_curves_data)
+    all_bezier_curves_arr = np.array(
+        [
+            np.concatenate(
+                (curves, np.zeros((max_num_curves - len(curves), 1, 10)),),
+                axis=0,
+            )
+            for curves in all_bezier_curves_data
+        ]
+    )
 
-    print(all_bezier_curves_arr.shape)
-    print(all_labels_arr.shape)
-    print(total_bezier_curves)
-    print(stroke_counts)
-
-    assert total_bezier_curves == len(
-        all_bezier_curves_arr
-    ), "The total number of strokes with at least 2 points and Bézier curves must be equal."
+    assert (
+        all_bezier_curves_arr.shape[0]
+        == all_labels_arr.shape[0]
+        == len(stroke_counts)
+    ), (
+        f"Number of stroke counts ({len(stroke_counts)}) "
+        f"does not match number of labels ({all_labels_arr.shape[0]}) "
+        f"or number of bezier curves ({all_bezier_curves_arr.shape[0]})."
+    )
 
     # Create a data directory if it doesn't exist.
     Path("data").mkdir(parents=True, exist_ok=True)
@@ -509,6 +512,3 @@ def extract_all_data() -> None:
         labels=all_labels_arr,
         bezier_data=all_bezier_curves_arr,
     )
-
-
-extract_all_data()
