@@ -411,6 +411,65 @@ def _fit_stroke_with_bezier_curve(
     )  # Will be a 2D array with shape (1, 10).
 
 
+def _pad_bezier_curves_data(
+    all_bezier_curves_data: list[npt.NDArray[np.float_]],
+) -> npt.NDArray[np.float_]:
+    """Pad the Bezier curves data with -1 so that all strokes have the same number of curves.
+    
+    Args:
+        all_bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays containing 
+            Bezier curve information for each stroke. Each array has shape (number_of_curves, 10),
+            with 10 columns representing various properties of the Bezier curve.
+
+    Returns:
+        npt.NDArray[np.float_]: A 3D numpy array with shape
+            (number_of_strokes, max_number_of_curves, 10), where each row represents the Bezier 
+            curve information of a stroke, and each stroke is padded with -1 values to have the
+            same number of curves.
+    """
+    max_num_curves = max(len(curves) for curves in all_bezier_curves_data)
+
+    return np.array(
+        [
+            np.concatenate(
+                (curves, np.full((max_num_curves - len(curves), 1, 10), -1),),
+                axis=0,
+            )
+            for curves in all_bezier_curves_data
+        ]
+    )
+
+
+def _filter_and_get_stroke_file_paths(
+    *, root: str, stroke_files: list[str]
+) -> list[Path]:
+    """Filter the stroke files and return a list of pathlib.Path objects representing the files.
+
+    Args:
+        root (str): The root directory of the stroke files.
+        stroke_files (list[str]): A list of file names of the stroke files.
+
+    Returns:
+        list[Path]: A list of pathlib.Path objects representing the stroke files.
+    """
+    return sorted(
+        # Get the full path to the stroke file.
+        Path(root) / Path(file)
+        for file in stroke_files
+        if file.endswith(".xml")
+        # Don't include these files. They are invalid or missing data.
+        and not file.startswith(
+            "z01-000z"
+        )  # Exclude files starting with "z01-000z".
+        and not file.startswith(
+            "a08-551z-08"
+        )  # Exclude files starting with "a08-551z-08".
+        and not file.startswith(
+            "a08-551z-09"
+        )  # Exclude files starting with "a08-551z-09".
+    )
+
+
 def extract_all_data() -> None:
     """Extract all data from the IAM On-Line Handwriting Database and save it to a numpy .npz file.
     
@@ -418,19 +477,19 @@ def extract_all_data() -> None:
     - labels: a list of strings, where each string represents a line label from the database.
 
     - bezier_data: a 2D numpy array with shape (number_of_strokes, 10), where each row
-    represents the Bézier curve information of a stroke. The columns contain the following:
-        1. x difference of the end points.
-        2. y difference of the end points.
-        3. Distance between the first control point and the starting point,
-        normalized by the end point differences.
-        4. Distance between the second control point and the starting point,
-        normalized by the end point differences.
-        5. Angle between the first control point and the x-axis in radians.
-        6. Angle between the second control point and the x-axis in radians.
-        7. Time coefficient for the first control point.
-        8. Time coefficient for the second control point.
-        9. Time coefficient for the end point.
-        10. Pen-up flag (1 if the pen is up after the stroke, 0 if the pen is down).
+        represents the Bézier curve information of a stroke. The columns contain the following:
+            1. x difference of the end points.
+            2. y difference of the end points.
+            3. Distance between the first control point and the starting point,
+            normalized by the end point differences.
+            4. Distance between the second control point and the starting point,
+            normalized by the end point differences.
+            5. Angle between the first control point and the x-axis in radians.
+            6. Angle between the second control point and the x-axis in radians.
+            7. Time coefficient for the first control point.
+            8. Time coefficient for the second control point.
+            9. Time coefficient for the end point.
+            10. Pen-up flag (1 if the pen is up after the stroke, 0 if the pen is down).
     """
     all_bezier_curves_data = []
     all_labels = []
@@ -447,17 +506,9 @@ def extract_all_data() -> None:
         desc="Processing directories",
     ):
         # Get all stroke files in the directory.
-        stroke_files = [
-            # Get the full path to the stroke file.
-            Path(root) / Path(file)
-            for file in stroke_files
-            if file.endswith(".xml")
-            # Don't include these files. They are invalid or missing data.
-            and not file.startswith("z01-000z")
-            and not file.startswith("a08-551z-08")
-            and not file.startswith("a08-551z-09")
-        ]
-        stroke_files.sort()
+        stroke_files = _filter_and_get_stroke_file_paths(
+            root=root, stroke_files=stroke_files
+        )
 
         # Go through each stroke file in the directory.
         for stroke_file in stroke_files:
@@ -479,18 +530,7 @@ def extract_all_data() -> None:
             all_bezier_curves_data.append(bezier_curves_data)
 
     all_labels_arr = np.array(all_labels)
-
-    # Pad the Bezier curves data with -1 so that all strokes have the same number of curves.
-    max_num_curves = max(len(curves) for curves in all_bezier_curves_data)
-    all_bezier_curves_arr = np.array(
-        [
-            np.concatenate(
-                (curves, np.full((max_num_curves - len(curves), 1, 10), -1),),
-                axis=0,
-            )
-            for curves in all_bezier_curves_data
-        ]
-    )
+    all_bezier_curves_arr = _pad_bezier_curves_data(all_bezier_curves_data)
 
     assert (
         all_bezier_curves_arr.shape[0]
