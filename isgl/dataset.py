@@ -1,4 +1,4 @@
-"""Contains the StrokeDataset class, which is used to load the stroke data from the .npz files."""
+"""Dataset for loading the extracted data from the ISGL dataset."""
 import string
 import torch
 from torch.utils.data import Dataset
