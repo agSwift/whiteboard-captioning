@@ -20,8 +20,8 @@ import scipy.optimize
 
 from tqdm import tqdm
 
-LINE_STROKES_DATA_DIR = Path("../datasets/IAM/lineStrokes")
-LINE_LABELS_DATA_DIR = Path("../datasets/IAM/ascii")
+LINE_STROKES_DATA_DIR = Path("datasets/IAM/lineStrokes")
+LINE_LABELS_DATA_DIR = Path("datasets/IAM/ascii")
 
 EXTRACTED_DATA_PATH = Path("data/iam_data.npz")
 

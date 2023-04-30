@@ -17,13 +17,13 @@ class IsglDataDirPath(Enum):
     """An enum class for the ISGL dataset stroke file directory paths."""
 
     NUMBERS = Path(
-        "../datasets/ICRGL/ONLINE/CHARACTERS/NUMBER/all image info-number"
+        "datasets/ICRGL/ONLINE/CHARACTERS/NUMBER/all image info-number"
     )
     LOWERCASE = Path(
-        "../datasets/ICRGL/ONLINE/CHARACTERS/LOWER/all image info- lower case"
+        "datasets/ICRGL/ONLINE/CHARACTERS/LOWER/all image info- lower case"
     )
     UPPERCASE = Path(
-        "../datasets/ICRGL/ONLINE/CHARACTERS/CAPITAL/capital_all image info"
+        "datasets/ICRGL/ONLINE/CHARACTERS/CAPITAL/capital_all image info"
     )
 
 
