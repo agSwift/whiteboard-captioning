@@ -511,15 +511,9 @@ def _set_up_train_val_test_data_stores() -> tuple[
         train_data_file_names = _get_dataset_label_file_names(
             DatasetType.TRAIN
         )
-        val1_data_file_names = _get_dataset_label_file_names(
-            DatasetType.VAL_1
-        )
-        val2_data_file_names = _get_dataset_label_file_names(
-            DatasetType.VAL_2
-        )
-        test_data_file_names = _get_dataset_label_file_names(
-            DatasetType.TEST
-        )
+        val1_data_file_names = _get_dataset_label_file_names(DatasetType.VAL_1)
+        val2_data_file_names = _get_dataset_label_file_names(DatasetType.VAL_2)
+        test_data_file_names = _get_dataset_label_file_names(DatasetType.TEST)
 
         # Check that the train, first validation, second validation, and test sets are disjoint.
         if not train_data_file_names.isdisjoint(val1_data_file_names):
