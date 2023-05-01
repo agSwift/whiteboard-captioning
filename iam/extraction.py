@@ -7,7 +7,8 @@ The following files were filtered out when extracting the data, as they are inva
 a08-551z-08.xml, a08-551z-09.xml, and all z01-000z stroke XML files.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +25,24 @@ LINE_STROKES_DATA_DIR = Path("datasets/IAM/lineStrokes")
 LINE_LABELS_DATA_DIR = Path("datasets/IAM/ascii")
 
 EXTRACTED_DATA_PATH = Path("data/iam_data.npz")
+
+
+class DatasetLabelFiles(Enum):
+    """An enum class for the dataset label files."""
+
+    TRAIN = Path("datasets/IAM/trainset.txt")
+    FST_VAL = Path("datasets/IAM/valset1.txt")
+    SND_VAL = Path("datasets/IAM/valset2.txt")
+    TEST = Path("datasets/IAM/testset.txt")
+
+
+@dataclass
+class BezierData:
+    label_file_names: list[str]
+    bezier_curves_data: list[list[npt.NDArray[np.float_]]] = field(
+        default_factory=list
+    )
+    labels: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -100,14 +119,16 @@ def _get_line_from_labels_file(
     return None
 
 
-def _get_label_from_stroke_file(stroke_file: Path) -> Optional[str]:
-    """Gets the line label from the stroke file.
+def _get_label_from_stroke_file(
+    stroke_file: Path,
+) -> tuple[Optional[str], str]:
+    """Gets the line label and the labels file name that the label belongs to.
 
     Args:
         stroke_file (Path): The stroke file path.
 
     Returns:
-        The line label. None if the line label is not found.
+        The line label and the label file name. None if the line label is not found.
 
     Raises:
         ValueError: If the stroke file is invalid.
@@ -155,7 +176,10 @@ def _get_label_from_stroke_file(stroke_file: Path) -> Optional[str]:
     )
 
     # Get the line label from the labels file.
-    return _get_line_from_labels_file(labels_file, line_label_idx)
+    return (
+        _get_line_from_labels_file(labels_file, line_label_idx),
+        labels_file_name,
+    )
 
 
 def _parse_stroke_element(stroke_elem: ET.Element) -> StrokeData:
@@ -411,35 +435,6 @@ def _fit_stroke_with_bezier_curve(
     )  # Will be a 2D array with shape (1, 10).
 
 
-def _pad_bezier_curves_data(
-    all_bezier_curves_data: list[npt.NDArray[np.float_]],
-) -> npt.NDArray[np.float_]:
-    """Pad the Bezier curves data with -1 so that all strokes have the same number of curves.
-    
-    Args:
-        all_bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays containing 
-            Bezier curve information for each stroke. Each array has shape (number_of_curves, 10),
-            with 10 columns representing various properties of the Bezier curve.
-
-    Returns:
-        npt.NDArray[np.float_]: A 3D numpy array with shape
-            (number_of_strokes, max_number_of_curves, 10), where each row represents the Bezier 
-            curve information of a stroke, and each stroke is padded with -1 values to have the
-            same number of curves.
-    """
-    max_num_curves = max(len(curves) for curves in all_bezier_curves_data)
-
-    return np.array(
-        [
-            np.concatenate(
-                (curves, np.full((max_num_curves - len(curves), 1, 10), -1),),
-                axis=0,
-            )
-            for curves in all_bezier_curves_data
-        ]
-    )
-
-
 def _filter_and_get_stroke_file_paths(
     *, root: str, stroke_files: list[str]
 ) -> list[Path]:
@@ -470,6 +465,287 @@ def _filter_and_get_stroke_file_paths(
     )
 
 
+def _set_up_train_val_test_data_stores() -> tuple[
+    BezierData, BezierData, BezierData, BezierData
+]:
+    """Set up the data stores for the train, first validation, second validation, and test sets.
+
+    Returns:
+        tuple[BezierData, BezierData, BezierData, BezierData]: A tuple of BezierData objects for
+            the train, first validation, second validation, and test sets.
+        
+    Raises:
+        ValueError: If the train, first validation, second validation, and test sets are not
+            disjoint.
+    """
+
+    def get_train_val_test_label_file_names() -> tuple[
+        set[str], set[str], set[str]
+    ]:
+        """Get the label file names for the train, first validation, second validation, and test sets.
+
+        Returns:
+            tuple[set[str], set[str], set[str]]: A tuple of sets of label file names for the train,
+                first validation, second validation, and test sets.
+        """
+
+        def _get_dataset_label_file_names(
+            dataset_label_files: DatasetLabelFiles,
+        ) -> set[str]:
+            """Get the label file names for the given dataset.
+
+            Args:
+                dataset_label_files (DatasetLabelFiles): The dataset label files.
+
+            Returns:
+                set[str]: A set of label file names for the given dataset.
+            """
+            label_file_names = set()
+            with open(
+                dataset_label_files.value, "r", encoding="utf-8"
+            ) as label_files:
+                for label_file_name in label_files:
+                    label_file_names.add(label_file_name.strip())
+            return label_file_names
+
+        train_data_file_names = _get_dataset_label_file_names(
+            DatasetLabelFiles.TRAIN
+        )
+        val1_data_file_names = _get_dataset_label_file_names(
+            DatasetLabelFiles.FST_VAL
+        )
+        val2_data_file_names = _get_dataset_label_file_names(
+            DatasetLabelFiles.SND_VAL
+        )
+        test_data_file_names = _get_dataset_label_file_names(
+            DatasetLabelFiles.TEST
+        )
+
+        # Check that the train, first validation, second validation, and test sets are disjoint.
+        if not train_data_file_names.isdisjoint(val1_data_file_names):
+            raise ValueError(
+                "The train and first validation sets are not disjoint."
+            )
+        if not train_data_file_names.isdisjoint(val2_data_file_names):
+            raise ValueError(
+                "The train and second validation sets are not disjoint."
+            )
+        if not train_data_file_names.isdisjoint(test_data_file_names):
+            raise ValueError("The train and test sets are not disjoint.")
+        if not val1_data_file_names.isdisjoint(val2_data_file_names):
+            raise ValueError(
+                "The first and second validation sets are not disjoint."
+            )
+        if not val1_data_file_names.isdisjoint(test_data_file_names):
+            raise ValueError(
+                "The first validation and test sets are not disjoint."
+            )
+        if not val2_data_file_names.isdisjoint(test_data_file_names):
+            raise ValueError(
+                "The second validation and test sets are not disjoint."
+            )
+
+        return (
+            train_data_file_names,
+            val1_data_file_names,
+            val2_data_file_names,
+            test_data_file_names,
+        )
+
+    (
+        train_label_file_names,
+        val1_label_file_names,
+        val2_label_file_names,
+        test_label_file_names,
+    ) = get_train_val_test_label_file_names()
+
+    train_data = BezierData(
+        label_file_names=train_label_file_names
+    )  # The train dataset.
+
+    val1_data = BezierData(
+        label_file_names=val1_label_file_names
+    )  # The first validation dataset.
+
+    val2_data = BezierData(
+        label_file_names=val2_label_file_names
+    )  # The second validation dataset.
+
+    test_data = BezierData(
+        label_file_names=test_label_file_names
+    )  # The test dataset.
+
+    return train_data, val1_data, val2_data, test_data
+
+
+def _append_label_bezier_curves_data(
+    *,
+    label: str,
+    labels_file_name: str,
+    bezier_curves_data: list[npt.NDArray[np.float_]],
+    train_data: BezierData,
+    val1_data: BezierData,
+    val2_data: BezierData,
+    test_data: BezierData,
+) -> None:
+    """Append the label and Bezier curves data to the appropriate dataset.
+
+    Args:
+        label (str): The label of the stroke file.
+        labels_file_name (str): The name of the labels file.
+        bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays containing
+            Bezier curve information for each stroke in the stroke file.
+        train_data (BezierData): The train dataset.
+        val1_data (BezierData): The first validation dataset.
+        val2_data (BezierData): The second validation dataset.
+        test_data (BezierData): The test dataset.
+
+    Raises:
+        ValueError: If the label is not found in any dataset.
+    """
+    if labels_file_name in train_data.label_file_names:
+        train_data.labels.append(label)
+        train_data.bezier_curves_data.append(bezier_curves_data)
+    elif labels_file_name in val1_data.label_file_names:
+        val1_data.labels.append(label)
+        val1_data.bezier_curves_data.append(bezier_curves_data)
+    elif labels_file_name in val2_data.label_file_names:
+        val2_data.labels.append(label)
+        val2_data.bezier_curves_data.append(bezier_curves_data)
+    elif labels_file_name in test_data.label_file_names:
+        test_data.labels.append(label)
+        test_data.bezier_curves_data.append(bezier_curves_data)
+    else:
+        raise ValueError(
+            f"The label '{label}' within the file '{labels_file_name}' is not found in any dataset."
+        )
+
+
+def _convert_to_numpy_and_save(
+    *,
+    train_data: BezierData,
+    val1_data: BezierData,
+    val2_data: BezierData,
+    test_data: BezierData,
+):
+    """Convert the data to numpy arrays.
+
+    Args:
+        train_data (BezierData): The train data.
+        val1_data (BezierData): The first validation data.
+        val2_data (BezierData): The second validation data.
+        test_data (BezierData): The test data.
+
+    Raises:
+        ValueError: If the data is invalid.
+    """
+
+    def is_valid_bezier_data(data: BezierData) -> None:
+        """Check that the data is valid.
+
+        Args:
+            data (BezierData): The data to check.
+
+        Raises:
+            ValueError: If the data is invalid.
+        """
+        if len(data.labels) != len(data.bezier_curves_data):
+            raise ValueError(
+                f"Length of labels ({len(data.labels)}) does not match length of Bezier curves "
+                f"data ({len(data.bezier_curves_data)})."
+            )
+
+    def pad_bezier_curves_data(
+        all_bezier_curves_data: list[npt.NDArray[np.float_]],
+    ) -> npt.NDArray[np.float_]:
+        """Pad the Bezier curves data with -1 so that all strokes have the same number of curves.
+        
+        Args:
+            all_bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays containing 
+                Bezier curve information for each stroke. Each array has shape (number_of_curves, 10),
+                with 10 columns representing various properties of the Bezier curve.
+
+        Returns:
+            npt.NDArray[np.float_]: A 3D numpy array with shape
+                (number_of_strokes, max_number_of_curves, 10), where each row represents the Bezier 
+                curve information of a stroke, and each stroke is padded with -1 values to have the
+                same number of curves.
+
+        Raises:
+            ValueError: If there is no Bezier curve data.
+        """
+        if not all_bezier_curves_data:
+            raise ValueError("There is no Bezier curve data.")
+
+        max_num_curves = max(len(curves) for curves in all_bezier_curves_data)
+
+        return np.array(
+            [
+                np.concatenate(
+                    (
+                        curves,
+                        np.full((max_num_curves - len(curves), 1, 10), -1),
+                    ),
+                    axis=0,
+                )
+                for curves in all_bezier_curves_data
+            ]
+        )
+
+    def convert_to_numpy(
+        data: BezierData,
+    ) -> tuple[npt.NDArray[np.float_], npt.NDArray[np.float_]]:
+        """Convert the data to numpy arrays.
+
+        Args:
+            data (BezierData): The data to convert.
+
+        Returns:
+            tuple[npt.NDArray[np.float_], npt.NDArray[np.float_]]: A tuple containing the labels
+                and Bezier curves data as numpy arrays.
+            
+        Raises:
+            AssertionError: If the number of labels does not match the number of Bezier curves.
+        """
+        labels_arr = np.array(data.labels)
+        bezier_curves_arr = pad_bezier_curves_data(data.bezier_curves_data)
+
+        assert labels_arr.shape[0] == bezier_curves_arr.shape[0], (
+            f"Number of labels ({labels_arr.shape[0]}) does not match number of Bezier curves "
+            f"({bezier_curves_arr.shape[0]})."
+        )
+
+        return labels_arr, bezier_curves_arr
+
+    # Check that the data is valid.
+    for data in [train_data, val1_data, val2_data, test_data]:
+        is_valid_bezier_data(data)
+
+    # Convert the data to numpy arrays.
+    (train_data_labels, train_data_bezier_curves,) = convert_to_numpy(
+        train_data
+    )
+    val1_data_labels, val1_data_bezier_curves = convert_to_numpy(val1_data)
+    val2_data_labels, val2_data_bezier_curves = convert_to_numpy(val2_data)
+    test_data_labels, test_data_bezier_curves = convert_to_numpy(test_data)
+
+    # Create a data directory if it doesn't exist.
+    Path("data").mkdir(parents=True, exist_ok=True)
+
+    # Save the data to a numpy .npz file.
+    np.savez_compressed(
+        EXTRACTED_DATA_PATH,
+        train_data_labels=train_data_labels,
+        train_data_bezier_curves=train_data_bezier_curves,
+        val1_data_labels=val1_data_labels,
+        val1_data_bezier_curves=val1_data_bezier_curves,
+        val2_data_labels=val2_data_labels,
+        val2_data_bezier_curves=val2_data_bezier_curves,
+        test_data_labels=test_data_labels,
+        test_data_bezier_curves=test_data_bezier_curves,
+    )
+
+
 def extract_all_data() -> None:
     """Extract all data from the IAM On-Line Handwriting Database and save it to a numpy .npz file.
     
@@ -491,13 +767,15 @@ def extract_all_data() -> None:
             9. Time coefficient for the end point.
             10. Pen-up flag (1 if the pen is up after the stroke, 0 if the pen is down).
     """
-    all_bezier_curves_data = []
-    all_labels = []
+    (
+        train_data,
+        val1_data,
+        val2_data,
+        test_data,
+    ) = _set_up_train_val_test_data_stores()
 
     # Get the total number of directories to process.
     total_dirs = sum(1 for _ in os.walk(LINE_STROKES_DATA_DIR))
-
-    stroke_counts = []
 
     # Go through each directory in the line strokes data directory.
     for root, _, stroke_files in tqdm(
@@ -513,41 +791,35 @@ def extract_all_data() -> None:
         # Go through each stroke file in the directory.
         for stroke_file in stroke_files:
             # Get the label for the stroke file.
-            label = _get_label_from_stroke_file(stroke_file)
-            if label is None:
+            line_label, labels_file_name = _get_label_from_stroke_file(
+                stroke_file
+            )
+            if line_label is None:
                 break
-            all_labels.append(label)
 
             # Get the strokes from the stroke file.
             strokes = _get_strokes_from_stroke_file(stroke_file)
-            stroke_counts.append(len(strokes))
 
             # Compute the Bezier curves for the stroke file.
             bezier_curves_data = [
                 _fit_stroke_with_bezier_curve(stroke) for stroke in strokes
             ]
 
-            all_bezier_curves_data.append(bezier_curves_data)
+            # Append the label and Bezier curve data to the appropriate dataset.
+            _append_label_bezier_curves_data(
+                label=line_label,
+                labels_file_name=labels_file_name,
+                bezier_curves_data=bezier_curves_data,
+                train_data=train_data,
+                val1_data=val1_data,
+                val2_data=val2_data,
+                test_data=test_data,
+            )
 
-    all_labels_arr = np.array(all_labels)
-    all_bezier_curves_arr = _pad_bezier_curves_data(all_bezier_curves_data)
-
-    assert (
-        all_bezier_curves_arr.shape[0]
-        == all_labels_arr.shape[0]
-        == len(stroke_counts)
-    ), (
-        f"Number of stroke counts ({len(stroke_counts)}) "
-        f"does not match number of labels ({all_labels_arr.shape[0]}) "
-        f"or number of bezier curves ({all_bezier_curves_arr.shape[0]})."
-    )
-
-    # Create a data directory if it doesn't exist.
-    Path("data").mkdir(parents=True, exist_ok=True)
-
-    # Save the extracted data to an NPZ file.
-    np.savez_compressed(
-        EXTRACTED_DATA_PATH,
-        labels=all_labels_arr,
-        bezier_data=all_bezier_curves_arr,
+    # Convert the data to numpy arrays and save it to a .npz file.
+    _convert_to_numpy_and_save(
+        train_data=train_data,
+        val1_data=val1_data,
+        val2_data=val2_data,
+        test_data=test_data,
     )
