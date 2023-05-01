@@ -11,6 +11,8 @@ CHAR_TO_INDEX = {char: index + 1 for index, char in enumerate(ALL_CHARS)}
 
 
 class StrokeBezierDataset(Dataset):
+    """A PyTorch Dataset class for the bezier curve data and labels."""
+
     def __init__(
         self, all_bezier_data: NpzFile, dataset_type: DatasetType,
     ):
