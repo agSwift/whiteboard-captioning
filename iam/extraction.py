@@ -725,7 +725,7 @@ def _convert_to_numpy_and_save(
     train_labels, train_bezier_curves = convert_to_numpy(train_data)
     val1_labels, val1_bezier_curves = convert_to_numpy(val1_data)
     val2_labels, val2_bezier_curves = convert_to_numpy(val2_data)
-    # test_labels, test_bezier_curves = convert_to_numpy(test_data)
+    test_labels, test_bezier_curves = convert_to_numpy(test_data)
 
     # Create a data directory if it doesn't exist.
     Path("data").mkdir(parents=True, exist_ok=True)
@@ -739,8 +739,8 @@ def _convert_to_numpy_and_save(
         val1_bezier_curves=val1_bezier_curves,
         val2_labels=val2_labels,
         val2_bezier_curves=val2_bezier_curves,
-        # test_labels=test_labels,
-        # test_bezier_curves=test_bezier_curves,
+        test_labels=test_labels,
+        test_bezier_curves=test_bezier_curves,
     )
 
 
