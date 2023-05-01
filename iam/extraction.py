@@ -292,13 +292,13 @@ def _get_strokes_from_stroke_file(stroke_file: Path) -> list[StrokeData]:
 def _fit_stroke_with_bezier_curve(
     stroke: StrokeData,
 ) -> npt.NDArray[np.float_]:
-    """"Processes the stroke data and fits it with a Bézier curve.
+    """Processes the stroke data and fits it with a Bezier curve.
     
     Args:
         stroke (StrokeData): The stroke data.
 
     Returns:
-        A numpy array containing the calculated Bézier curve information.
+        A numpy array containing the calculated Bezier curve information.
 
     Raises:
         ValueError: If the stroke data is invalid.
@@ -309,7 +309,7 @@ def _fit_stroke_with_bezier_curve(
             f"Invalid stroke data: {stroke}. Must be an instance of {StrokeData}."
         )
 
-    # If there are less than 2 points, there is no Bézier curve to fit.
+    # If there are less than 2 points, there is no Bezier curve to fit.
     if len(stroke.x_points) < 2:
         return np.zeros((1, 10))
 
@@ -321,16 +321,15 @@ def _fit_stroke_with_bezier_curve(
         alpha: npt.NDArray[np.float_],
         beta: npt.NDArray[np.float_],
     ) -> npt.NDArray[np.float_]:
-        """Calculate the Bézier curve using the given parameters.
+        """Calculate the Bezier curve using the given parameters.
 
         Args:
-            s_param (float): The parameter s for the Bézier curve (between 0 and 1).
+            s_param (float): The parameter s for the Bezier curve (between 0 and 1).
             alpha (npt.NDArray[np.float_]): The coefficients for the x component of the curve.
             beta (npt.NDArray[np.float_]): The coefficients for the y component of the curve.
 
         Returns:
-            A numpy array containing the x and y coordinates of the Bézier curve at the given parameter s.
-
+            A numpy array containing the x and y coordinates of the Bezier curve at the given parameter s.
         """
         x_bezier_points = (
             alpha[0]
@@ -349,14 +348,15 @@ def _fit_stroke_with_bezier_curve(
     def objective_function(
         coefficients: npt.NDArray[np.float_], points: npt.NDArray[np.float_]
     ) -> float:
-        """Calculate the sum of squared errors (SSE) between Bézier curve points and given points.
+        """Calculate the sum of squared errors (SSE) between Bezier curve points and given points.
         
         Args:
-            coefficients (npt.NDArray[np.float_]): The coefficients for the Bézier curve.
+            coefficients (npt.NDArray[np.float_]): The coefficients for the Bezier curve.
             points (npt.NDArray[np.float_]): The points to fit the curve to.
             
         Returns:
-            The SSE between the Bézier curve points and the given points."""
+            The SSE between the Bezier curve points and the given points.
+        """
         alpha, beta = coefficients[:4], coefficients[4:]
         s_values = np.linspace(0, 1, len(points))
         curve_points = np.array(
@@ -477,7 +477,7 @@ def extract_all_data() -> None:
     - labels: a list of strings, where each string represents a line label from the database.
 
     - bezier_data: a 2D numpy array with shape (number_of_strokes, 10), where each row
-        represents the Bézier curve information of a stroke. The columns contain the following:
+        represents the Bezier curve information of a stroke. The columns contain the following:
             1. x difference of the end points.
             2. y difference of the end points.
             3. Distance between the first control point and the starting point,
@@ -522,7 +522,7 @@ def extract_all_data() -> None:
             strokes = _get_strokes_from_stroke_file(stroke_file)
             stroke_counts.append(len(strokes))
 
-            # Compute the Bézier curves for the stroke file.
+            # Compute the Bezier curves for the stroke file.
             bezier_curves_data = [
                 _fit_stroke_with_bezier_curve(stroke) for stroke in strokes
             ]
