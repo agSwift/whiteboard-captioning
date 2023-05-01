@@ -1,43 +1,64 @@
 """Dataset for loading the extracted data from the IAM dataset."""
 import string
 import torch
+from extraction import DatasetType
 from torch.utils.data import Dataset
 from numpy.lib.npyio import NpzFile
+
 
 ALL_CHARS = string.ascii_letters + " "
 CHAR_TO_INDEX = {char: index + 1 for index, char in enumerate(ALL_CHARS)}
 
 
 class StrokeBezierDataset(Dataset):
-    def __init__(self, stroke_bezier_data: NpzFile):
+    def __init__(
+        self, all_bezier_data: NpzFile, dataset_type: DatasetType,
+    ):
         """Initializes the StrokeBezierDataset class.
         
         Args:
-            stroke_bezier_data (NpzFile): The stroke data to load.
+            stroke_bezier_data (NpzFile): All the extracted stroke data.
+            dataset_type (DatasetType): The type of dataset to load.
             
         Raises:
+            ValueError: If the dataset type is invalid.
             ValueError: If the stroke data is invalid.
         """
-        if not isinstance(stroke_bezier_data, NpzFile):
+        # Check that the dataset type is valid.
+        if not isinstance(dataset_type, DatasetType):
             raise ValueError(
-                f"Invalid stroke data: {stroke_bezier_data}. "
+                f"Invalid data type: {dataset_type}. "
+                f"Must be an instance of {DatasetType}."
+            )
+        if not isinstance(all_bezier_data, NpzFile):
+            raise ValueError(
+                f"Invalid stroke data: {all_bezier_data}. "
                 f"Must be an instance of {NpzFile}."
             )
 
-        if (
-            "labels" not in stroke_bezier_data
-            or "bezier_data" not in stroke_bezier_data
-        ):
+        # Check that all_bezier_data contains the required data.
+        dataset_type_name = dataset_type.name.lower()
+        if f"{dataset_type_name}_bezier_curves" not in all_bezier_data.files:
             raise ValueError(
-                f"Invalid stroke data: {stroke_bezier_data}. "
-                f"Must contain the keys 'labels' and 'bezier_data'."
+                f"Invalid stroke data: {all_bezier_data}. "
+                f"Must contain {dataset_type_name}_bezier_curves."
             )
 
-        self.x = torch.from_numpy(stroke_bezier_data["bezier_data"]).float()
+        if f"{dataset_type_name}_labels" not in all_bezier_data.files:
+            raise ValueError(
+                f"Invalid stroke data: {all_bezier_data}. "
+                f"Must contain {dataset_type_name}_labels."
+            )
+
+        # Load the bezier curves and labels.
+        self.x = torch.from_numpy(
+            all_bezier_data[f"{dataset_type_name}_bezier_curves"]
+        ).float()
 
         # The maximum length of a label.
         max_label_length = max(
-            len(label) for label in stroke_bezier_data["labels"]
+            len(label)
+            for label in all_bezier_data[f"{dataset_type_name}_labels"]
         )
         # Encode each label as a tensor of indices.
         self.y = torch.stack(
@@ -45,7 +66,7 @@ class StrokeBezierDataset(Dataset):
                 self._encode_label(
                     label=label, max_label_length=max_label_length
                 )
-                for label in stroke_bezier_data["labels"]
+                for label in all_bezier_data[f"{dataset_type_name}_labels"]
             ]
         )
 

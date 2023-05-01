@@ -27,12 +27,12 @@ LINE_LABELS_DATA_DIR = Path("datasets/IAM/ascii")
 EXTRACTED_DATA_PATH = Path("data/iam_data.npz")
 
 
-class DatasetLabelFiles(Enum):
-    """An enum class for the dataset label files."""
+class DatasetType(Enum):
+    """An enum for the dataset types."""
 
     TRAIN = Path("datasets/IAM/trainset.txt")
-    FST_VAL = Path("datasets/IAM/valset1.txt")
-    SND_VAL = Path("datasets/IAM/valset2.txt")
+    VAL_1 = Path("datasets/IAM/valset1.txt")
+    VAL_2 = Path("datasets/IAM/valset2.txt")
     TEST = Path("datasets/IAM/testset.txt")
 
 
@@ -490,35 +490,35 @@ def _set_up_train_val_test_data_stores() -> tuple[
         """
 
         def _get_dataset_label_file_names(
-            dataset_label_files: DatasetLabelFiles,
+            dataset_type: DatasetType,
         ) -> set[str]:
             """Get the label file names for the given dataset.
 
             Args:
-                dataset_label_files (DatasetLabelFiles): The dataset label files.
+                dataset_type (DatasetType): The dataset type.
 
             Returns:
                 set[str]: A set of label file names for the given dataset.
             """
             label_file_names = set()
             with open(
-                dataset_label_files.value, "r", encoding="utf-8"
+                dataset_type.value, "r", encoding="utf-8"
             ) as label_files:
                 for label_file_name in label_files:
                     label_file_names.add(label_file_name.strip())
             return label_file_names
 
         train_data_file_names = _get_dataset_label_file_names(
-            DatasetLabelFiles.TRAIN
+            DatasetType.TRAIN
         )
         val1_data_file_names = _get_dataset_label_file_names(
-            DatasetLabelFiles.FST_VAL
+            DatasetType.VAL_1
         )
         val2_data_file_names = _get_dataset_label_file_names(
-            DatasetLabelFiles.SND_VAL
+            DatasetType.VAL_2
         )
         test_data_file_names = _get_dataset_label_file_names(
-            DatasetLabelFiles.TEST
+            DatasetType.TEST
         )
 
         # Check that the train, first validation, second validation, and test sets are disjoint.
@@ -722,12 +722,10 @@ def _convert_to_numpy_and_save(
         is_valid_bezier_data(data)
 
     # Convert the data to numpy arrays.
-    (train_data_labels, train_data_bezier_curves,) = convert_to_numpy(
-        train_data
-    )
-    val1_data_labels, val1_data_bezier_curves = convert_to_numpy(val1_data)
-    val2_data_labels, val2_data_bezier_curves = convert_to_numpy(val2_data)
-    test_data_labels, test_data_bezier_curves = convert_to_numpy(test_data)
+    train_labels, train_bezier_curves = convert_to_numpy(train_data)
+    val1_labels, val1_bezier_curves = convert_to_numpy(val1_data)
+    val2_labels, val2_bezier_curves = convert_to_numpy(val2_data)
+    # test_labels, test_bezier_curves = convert_to_numpy(test_data)
 
     # Create a data directory if it doesn't exist.
     Path("data").mkdir(parents=True, exist_ok=True)
@@ -735,14 +733,14 @@ def _convert_to_numpy_and_save(
     # Save the data to a numpy .npz file.
     np.savez_compressed(
         EXTRACTED_DATA_PATH,
-        train_data_labels=train_data_labels,
-        train_data_bezier_curves=train_data_bezier_curves,
-        val1_data_labels=val1_data_labels,
-        val1_data_bezier_curves=val1_data_bezier_curves,
-        val2_data_labels=val2_data_labels,
-        val2_data_bezier_curves=val2_data_bezier_curves,
-        test_data_labels=test_data_labels,
-        test_data_bezier_curves=test_data_bezier_curves,
+        train_labels=train_labels,
+        train_bezier_curves=train_bezier_curves,
+        val1_labels=val1_labels,
+        val1_bezier_curves=val1_bezier_curves,
+        val2_labels=val2_labels,
+        val2_bezier_curves=val2_bezier_curves,
+        # test_labels=test_labels,
+        # test_bezier_curves=test_bezier_curves,
     )
 
 
