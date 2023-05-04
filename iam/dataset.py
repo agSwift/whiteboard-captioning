@@ -6,8 +6,9 @@ from torch.utils.data import Dataset
 from numpy.lib.npyio import NpzFile
 
 
-ALL_CHARS = string.ascii_letters + " "
-CHAR_TO_INDEX = {char: index + 1 for index, char in enumerate(ALL_CHARS)}
+CHAR_TO_INDEX = {
+    char: index + 1 for index, char in enumerate(string.ascii_letters + " ")
+}
 
 
 class StrokeBezierDataset(Dataset):
@@ -53,9 +54,10 @@ class StrokeBezierDataset(Dataset):
             )
 
         # Load the bezier curves and labels.
-        self.x = torch.from_numpy(
+        self.all_bezier_curves = torch.from_numpy(
             all_bezier_data[f"{dataset_type_name}_bezier_curves"]
         ).float()
+        self.max_num_bezier_curves = int(torch.max(self.all_bezier_curves))
 
         # The length of each label, prior to padding.
         self.target_lengths = torch.tensor(
@@ -72,7 +74,7 @@ class StrokeBezierDataset(Dataset):
             for label in all_bezier_data[f"{dataset_type_name}_labels"]
         )
         # Encode each label as a tensor of indices.
-        self.y = torch.stack(
+        self.labels = torch.stack(
             [
                 self._encode_label(
                     label=label, max_label_length=max_label_length
@@ -81,16 +83,16 @@ class StrokeBezierDataset(Dataset):
             ]
         )
 
-        assert self.x.shape[0] == self.y.shape[0], (
-            f"Number of bezier data ({self.x.shape[0]}) does not match "
-            f"number of labels ({self.y.shape[0]})."
+        assert self.all_bezier_curves.shape[0] == self.labels.shape[0], (
+            f"Number of bezier data ({self.all_bezier_curves.shape[0]}) does not match "
+            f"number of labels ({self.labels.shape[0]})."
         )
 
     def __len__(self):
-        return len(self.x)
+        return len(self.all_bezier_curves)
 
     def __getitem__(self, idx):
-        return self.x[idx], self.y[idx]
+        return self.all_bezier_curves[idx], self.labels[idx]
 
     def _encode_label(
         self, *, label: str, max_label_length: int

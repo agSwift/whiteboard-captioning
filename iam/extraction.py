@@ -38,6 +38,8 @@ class DatasetType(Enum):
 
 @dataclass
 class BezierData:
+    """A dataclass for the bezier curve data."""
+
     label_file_names: list[str]
     bezier_curves_data: list[list[npt.NDArray[np.float_]]] = field(
         default_factory=list
@@ -511,45 +513,49 @@ def _set_up_train_val_test_data_stores() -> tuple[
         train_data_file_names = _get_dataset_label_file_names(
             DatasetType.TRAIN
         )
-        val1_data_file_names = _get_dataset_label_file_names(DatasetType.VAL_1)
-        val2_data_file_names = _get_dataset_label_file_names(DatasetType.VAL_2)
+        val_1_data_file_names = _get_dataset_label_file_names(
+            DatasetType.VAL_1
+        )
+        val_2_data_file_names = _get_dataset_label_file_names(
+            DatasetType.VAL_2
+        )
         test_data_file_names = _get_dataset_label_file_names(DatasetType.TEST)
 
         # Check that the train, first validation, second validation, and test sets are disjoint.
-        if not train_data_file_names.isdisjoint(val1_data_file_names):
+        if not train_data_file_names.isdisjoint(val_1_data_file_names):
             raise ValueError(
                 "The train and first validation sets are not disjoint."
             )
-        if not train_data_file_names.isdisjoint(val2_data_file_names):
+        if not train_data_file_names.isdisjoint(val_2_data_file_names):
             raise ValueError(
                 "The train and second validation sets are not disjoint."
             )
         if not train_data_file_names.isdisjoint(test_data_file_names):
             raise ValueError("The train and test sets are not disjoint.")
-        if not val1_data_file_names.isdisjoint(val2_data_file_names):
+        if not val_1_data_file_names.isdisjoint(val_2_data_file_names):
             raise ValueError(
                 "The first and second validation sets are not disjoint."
             )
-        if not val1_data_file_names.isdisjoint(test_data_file_names):
+        if not val_1_data_file_names.isdisjoint(test_data_file_names):
             raise ValueError(
                 "The first validation and test sets are not disjoint."
             )
-        if not val2_data_file_names.isdisjoint(test_data_file_names):
+        if not val_2_data_file_names.isdisjoint(test_data_file_names):
             raise ValueError(
                 "The second validation and test sets are not disjoint."
             )
 
         return (
             train_data_file_names,
-            val1_data_file_names,
-            val2_data_file_names,
+            val_1_data_file_names,
+            val_2_data_file_names,
             test_data_file_names,
         )
 
     (
         train_label_file_names,
-        val1_label_file_names,
-        val2_label_file_names,
+        val_1_label_file_names,
+        val_2_label_file_names,
         test_label_file_names,
     ) = get_train_val_test_label_file_names()
 
@@ -557,19 +563,19 @@ def _set_up_train_val_test_data_stores() -> tuple[
         label_file_names=train_label_file_names
     )  # The train dataset.
 
-    val1_data = BezierData(
-        label_file_names=val1_label_file_names
+    val_1_data = BezierData(
+        label_file_names=val_1_label_file_names
     )  # The first validation dataset.
 
-    val2_data = BezierData(
-        label_file_names=val2_label_file_names
+    val_2_data = BezierData(
+        label_file_names=val_2_label_file_names
     )  # The second validation dataset.
 
     test_data = BezierData(
         label_file_names=test_label_file_names
     )  # The test dataset.
 
-    return train_data, val1_data, val2_data, test_data
+    return train_data, val_1_data, val_2_data, test_data
 
 
 def _append_label_bezier_curves_data(
@@ -578,11 +584,13 @@ def _append_label_bezier_curves_data(
     labels_file_name: str,
     bezier_curves_data: list[npt.NDArray[np.float_]],
     train_data: BezierData,
-    val1_data: BezierData,
-    val2_data: BezierData,
+    val_1_data: BezierData,
+    val_2_data: BezierData,
     test_data: BezierData,
 ) -> None:
     """Append the label and Bezier curves data to the appropriate dataset.
+
+    The data will not be appended if the label file name is not in any of the datasets.
 
     Args:
         label (str): The label of the stroke file.
@@ -590,44 +598,40 @@ def _append_label_bezier_curves_data(
         bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays containing
             Bezier curve information for each stroke in the stroke file.
         train_data (BezierData): The train dataset.
-        val1_data (BezierData): The first validation dataset.
-        val2_data (BezierData): The second validation dataset.
+        val_1_data (BezierData): The first validation dataset.
+        val_2_data (BezierData): The second validation dataset.
         test_data (BezierData): The test dataset.
 
-    Raises:
-        ValueError: If the label is not found in any dataset.
+    Returns:
+        None.
     """
     if labels_file_name in train_data.label_file_names:
         train_data.labels.append(label)
         train_data.bezier_curves_data.append(bezier_curves_data)
-    elif labels_file_name in val1_data.label_file_names:
-        val1_data.labels.append(label)
-        val1_data.bezier_curves_data.append(bezier_curves_data)
-    elif labels_file_name in val2_data.label_file_names:
-        val2_data.labels.append(label)
-        val2_data.bezier_curves_data.append(bezier_curves_data)
+    elif labels_file_name in val_1_data.label_file_names:
+        val_1_data.labels.append(label)
+        val_1_data.bezier_curves_data.append(bezier_curves_data)
+    elif labels_file_name in val_2_data.label_file_names:
+        val_2_data.labels.append(label)
+        val_2_data.bezier_curves_data.append(bezier_curves_data)
     elif labels_file_name in test_data.label_file_names:
         test_data.labels.append(label)
         test_data.bezier_curves_data.append(bezier_curves_data)
-    else:
-        raise ValueError(
-            f"The label '{label}' within the file '{labels_file_name}' is not found in any dataset."
-        )
 
 
 def _convert_to_numpy_and_save(
     *,
     train_data: BezierData,
-    val1_data: BezierData,
-    val2_data: BezierData,
+    val_1_data: BezierData,
+    val_2_data: BezierData,
     test_data: BezierData,
 ):
     """Convert the data to numpy arrays.
 
     Args:
         train_data (BezierData): The train data.
-        val1_data (BezierData): The first validation data.
-        val2_data (BezierData): The second validation data.
+        val_1_data (BezierData): The first validation data.
+        val_2_data (BezierData): The second validation data.
         test_data (BezierData): The test data.
 
     Raises:
@@ -655,9 +659,10 @@ def _convert_to_numpy_and_save(
         """Pad the Bezier curves data with -1 so that all strokes have the same number of curves.
         
         Args:
-            all_bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays containing 
-                Bezier curve information for each stroke. Each array has shape (number_of_curves, 10),
-                with 10 columns representing various properties of the Bezier curve.
+            all_bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays
+                containing Bezier curve information for each stroke. Each array has shape
+                (number_of_curves, 10), with 10 columns representing various
+                properties of the Bezier curve.
 
         Returns:
             npt.NDArray[np.float_]: A 3D numpy array with shape
@@ -712,13 +717,13 @@ def _convert_to_numpy_and_save(
         return labels_arr, bezier_curves_arr
 
     # Check that the data is valid.
-    for data in [train_data, val1_data, val2_data, test_data]:
+    for data in [train_data, val_1_data, val_2_data, test_data]:
         is_valid_bezier_data(data)
 
     # Convert the data to numpy arrays.
     train_labels, train_bezier_curves = convert_to_numpy(train_data)
-    val1_labels, val1_bezier_curves = convert_to_numpy(val1_data)
-    val2_labels, val2_bezier_curves = convert_to_numpy(val2_data)
+    val_1_labels, val_1_bezier_curves = convert_to_numpy(val_1_data)
+    val_2_labels, val_2_bezier_curves = convert_to_numpy(val_2_data)
     test_labels, test_bezier_curves = convert_to_numpy(test_data)
 
     # Create a data directory if it doesn't exist.
@@ -729,10 +734,10 @@ def _convert_to_numpy_and_save(
         EXTRACTED_DATA_PATH,
         train_labels=train_labels,
         train_bezier_curves=train_bezier_curves,
-        val1_labels=val1_labels,
-        val1_bezier_curves=val1_bezier_curves,
-        val2_labels=val2_labels,
-        val2_bezier_curves=val2_bezier_curves,
+        val_1_labels=val_1_labels,
+        val_1_bezier_curves=val_1_bezier_curves,
+        val_2_labels=val_2_labels,
+        val_2_bezier_curves=val_2_bezier_curves,
         test_labels=test_labels,
         test_bezier_curves=test_bezier_curves,
     )
@@ -761,8 +766,8 @@ def extract_all_data() -> None:
     """
     (
         train_data,
-        val1_data,
-        val2_data,
+        val_1_data,
+        val_2_data,
         test_data,
     ) = _set_up_train_val_test_data_stores()
 
@@ -803,15 +808,15 @@ def extract_all_data() -> None:
                 labels_file_name=labels_file_name,
                 bezier_curves_data=bezier_curves_data,
                 train_data=train_data,
-                val1_data=val1_data,
-                val2_data=val2_data,
+                val_1_data=val_1_data,
+                val_2_data=val_2_data,
                 test_data=test_data,
             )
 
     # Convert the data to numpy arrays and save it to a .npz file.
     _convert_to_numpy_and_save(
         train_data=train_data,
-        val1_data=val1_data,
-        val2_data=val2_data,
+        val_1_data=val_1_data,
+        val_2_data=val_2_data,
         test_data=test_data,
     )

@@ -6,12 +6,16 @@ import torch.nn as nn
 
 
 class RNNType(Enum):
+    """Enum for the RNN model type."""
+
     RNN = "RNN"
     LSTM = "LSTM"
     GRU = "GRU"
 
 
 class BaseModel(nn.Module):
+    """Base class for RNN, LSTM, and GRU models."""
+
     def __init__(
         self,
         *,
@@ -21,6 +25,7 @@ class BaseModel(nn.Module):
         num_classes: int,
         num_layers: int,
         rnn_type: RNNType,
+        device: torch.device = torch.device("cpu"),
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -49,11 +54,25 @@ class BaseModel(nn.Module):
                 hidden_size, hidden_size, num_layers, batch_first=True
             )
         else:
-            raise ValueError(f"Invalid RNN type: {rnn_type}")
+            raise ValueError(
+                f"Invalid RNN type: {rnn_type}. Must be one of {RNNType}."
+            )
+
+        self.device = device
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass through the model.
+        
+        Args:
+            x (torch.Tensor): The input tensor of shape 
+                (batch_size, num_bezier_curves, bezier_curve_dimension).
+        
+        Returns:
+            torch.Tensor: The output tensor of shape
+                (batch_size, num_classes + 1, num_bezier_curves).
+        """
         # Flatten the last two dimensions of the input and transform it using the input linear layer.
-        x = x.view(x.size(0), -1)
+        x = x.reshape(x.size(0), -1)
         x = self.input_linear(x)
 
         # Set initial hidden states and cell states if LSTM.
@@ -68,13 +87,17 @@ class BaseModel(nn.Module):
         else:
             out, _ = self.rnn(x.unsqueeze(1), h0)
 
-        out = self.fc(out)  # Apply the fully connected layer to all time steps
+        out = self.fc(
+            out
+        )  # Apply the fully connected layer to all time steps.
         out = torch.nn.functional.log_softmax(
             out, dim=2
-        )  # Apply log_softmax to the output
+        )  # Apply log_softmax to the output.
 
 
-class RNNModel(BaseModel):
+class RNN(BaseModel):
+    """Recurrent Neural Network (RNN) model."""
+
     def __init__(
         self,
         *,
@@ -83,6 +106,7 @@ class RNNModel(BaseModel):
         hidden_size: int,
         num_classes: int,
         num_layers: int,
+        device: torch.device = torch.device("cpu"),
     ):
         super().__init__(
             num_bezier_curves=num_bezier_curves,
@@ -90,11 +114,14 @@ class RNNModel(BaseModel):
             hidden_size=hidden_size,
             num_classes=num_classes,
             num_layers=num_layers,
-            rnn_type="RNN",
+            rnn_type=RNNType.RNN,
+            device=device,
         )
 
 
-class LSTMModel(BaseModel):
+class LSTM(BaseModel):
+    """Long Short-Term Memory (LSTM) model."""
+
     def __init__(
         self,
         *,
@@ -103,6 +130,7 @@ class LSTMModel(BaseModel):
         hidden_size: int,
         num_classes: int,
         num_layers: int,
+        device: torch.device = torch.device("cpu"),
     ):
         super().__init__(
             num_bezier_curves=num_bezier_curves,
@@ -110,11 +138,14 @@ class LSTMModel(BaseModel):
             hidden_size=hidden_size,
             num_classes=num_classes,
             num_layers=num_layers,
-            rnn_type="LSTM",
+            rnn_type=RNNType.LSTM,
+            device=device,
         )
 
 
-class GRUModel(BaseModel):
+class GRU(BaseModel):
+    """Gated Recurrent Unit (GRU) model."""
+
     def __init__(
         self,
         *,
@@ -123,6 +154,7 @@ class GRUModel(BaseModel):
         hidden_size: int,
         num_classes: int,
         num_layers: int,
+        device: torch.device = torch.device("cpu"),
     ):
         super().__init__(
             num_bezier_curves=num_bezier_curves,
@@ -130,5 +162,6 @@ class GRUModel(BaseModel):
             hidden_size=hidden_size,
             num_classes=num_classes,
             num_layers=num_layers,
-            rnn_type="GRU",
+            rnn_type=RNNType.GRU,
+            device=device,
         )
