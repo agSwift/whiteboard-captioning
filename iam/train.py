@@ -1,6 +1,7 @@
 from enum import Enum
 from pathlib import Path
 import numpy as np
+from py import test
 
 import torch
 from torch import nn, optim
@@ -95,39 +96,12 @@ def _create_data_loaders(
     return train_loader, val_1_loader, val_2_loader, test_loader
 
 
-def _get_max_num_bezier_curves(
-    *,
-    train_dataset: dataset.StrokeBezierDataset,
-    val_1_dataset: dataset.StrokeBezierDataset,
-    val_2_dataset: dataset.StrokeBezierDataset,
-    test_dataset: dataset.StrokeBezierDataset,
-) -> int:
-    """Gets the maximum number of bezier curves in a single sample in the given datasets.
-    
-    Args:
-        train_dataset (dataset.StrokeBezierDataset): The training dataset.
-        val_1_dataset (dataset.StrokeBezierDataset): The first validation dataset.
-        val_2_dataset (dataset.StrokeBezierDataset): The second validation dataset.
-        test_dataset (dataset.StrokeBezierDataset): The test dataset.
-        
-    Returns:
-        int: The maximum number of bezier curves in a single sample in the given datasets.
-    """
-    max_num_bezier_curves = 0
-    for dataset in [train_dataset, val_1_dataset, val_2_dataset, test_dataset]:
-        max_num_bezier_curves = max(
-            max_num_bezier_curves, dataset.max_num_bezier_curves
-        )
-    return max_num_bezier_curves
-
-
 def _train_epoch(
     *,
     model: nn.Module,
     criterion: nn.CTCLoss,
     optimizer: optim.Optimizer,
     train_loader: DataLoader,
-    train_dataset: dataset.StrokeBezierDataset,
 ) -> float:
     """Trains the model for one epoch.
     
@@ -146,7 +120,11 @@ def _train_epoch(
     train_loss = 0.0
 
     # Iterate through batches in the training dataset.
-    for batch_idx, (bezier_curves, labels) in enumerate(train_loader):
+    for bezier_curves, labels in train_loader:
+        # Remove the extra dimension from the bezier curves.
+        bezier_curves = bezier_curves.squeeze(-2)
+        # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim)
+        bezier_curves = bezier_curves.permute(1, 0, 2)
         # Move the batch data to the device (CPU or GPU).
         bezier_curves, labels = bezier_curves.to(DEVICE), labels.to(DEVICE)
 
@@ -157,17 +135,22 @@ def _train_epoch(
         logits = model(bezier_curves)
         # Calculate the log probabilities using log softmax.
         log_probs = logits.log_softmax(2).detach().requires_grad_()
+
+        # Create input_lengths tensor for the CTC loss function.
+        actual_batch_size = bezier_curves.size(1)
+
         # Create input_lengths tensor for the CTC loss function.
         input_lengths = torch.full(
-            size=(logits.size(0),),
-            fill_value=logits.size(1),
+            size=(actual_batch_size,),
+            fill_value=logits.size(0),
             dtype=torch.long,
+            device=DEVICE,
         )
 
         # Calculate target_lengths for the current batch.
-        target_lengths = train_dataset.target_lengths[
-            batch_idx * BATCH_SIZE : (batch_idx + 1) * BATCH_SIZE
-        ]
+        target_lengths = torch.tensor(
+            [len(label) for label in labels], dtype=torch.long, device=DEVICE,
+        )
 
         # Calculate the CTC loss.
         loss = criterion(log_probs, labels, input_lengths, target_lengths)
@@ -185,11 +168,7 @@ def _train_epoch(
 
 
 def _validate_epoch(
-    *,
-    model: nn.Module,
-    criterion: nn.CTCLoss,
-    val_loader: DataLoader,
-    val_dataset: DataLoader,
+    *, model: nn.Module, criterion: nn.CTCLoss, val_loader: DataLoader
 ) -> float:
     """Validates the model for one epoch on the given validation dataset.
     
@@ -197,7 +176,6 @@ def _validate_epoch(
         model (nn.Module): The model to validate.
         criterion (nn.CTCLoss): The CTC loss function.
         val_loader (DataLoader): The validation data loader.
-        val_dataset (DataLoader): The validation dataset.
         
     Returns:
         float: The average validation loss for the epoch.
@@ -210,6 +188,10 @@ def _validate_epoch(
     # Evaluate the model on the validation dataset.
     with torch.no_grad():
         for bezier_curves, labels in val_loader:
+            # Remove the extra dimension from the bezier curves.
+            bezier_curves = bezier_curves.squeeze(-2)
+            # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim)
+            bezier_curves = bezier_curves.permute(1, 0, 2)
             # Move the batch data to the device (CPU or GPU).
             bezier_curves, labels = (
                 bezier_curves.to(DEVICE),
@@ -220,15 +202,22 @@ def _validate_epoch(
             logits = model(bezier_curves)
             # Calculate the log probabilities using log softmax.
             log_probs = logits.log_softmax(2)
+
+            actual_batch_size = bezier_curves.size(1)
             # Create input_lengths tensor for the CTC loss function.
             input_lengths = torch.full(
-                size=(logits.size(0),),
-                fill_value=logits.size(1),
+                size=(actual_batch_size,),
+                fill_value=logits.size(0),
                 dtype=torch.long,
+                device=DEVICE,
             )
 
             # Calculate target_lengths for the current batch.
-            target_lengths = val_dataset.target_lengths[: len(val_loader)]
+            target_lengths = torch.tensor(
+                [len(label) for label in labels],
+                dtype=torch.long,
+                device=DEVICE,
+            )
 
             # Calculate the CTC loss.
             loss = criterion(log_probs, labels, input_lengths, target_lengths)
@@ -240,11 +229,7 @@ def _validate_epoch(
 
 
 def _test_model(
-    *,
-    model: nn.Module,
-    criterion: nn.CTCLoss,
-    test_loader: DataLoader,
-    test_dataset: dataset.StrokeBezierDataset,
+    *, model: nn.Module, criterion: nn.CTCLoss, test_loader: DataLoader,
 ) -> float:
     """Tests the model on the given test dataset.
     
@@ -252,7 +237,6 @@ def _test_model(
         model (nn.Module): The model to test.
         criterion (nn.CTCLoss): The CTC loss function.
         test_loader (DataLoader): The test data loader.
-        test_dataset (dataset.StrokeBezierDataset): The test dataset.
         
     Returns:
         float: The average test loss.
@@ -262,14 +246,14 @@ def _test_model(
     # Initialize the test loss.
     test_loss = 0.0
 
-    # Create a data loader for the test dataset.
-    test_loader = DataLoader(
-        test_dataset, batch_size=BATCH_SIZE, shuffle=False
-    )
-
     # Evaluate the model on the test dataset.
     with torch.no_grad():
         for bezier_curves, labels in test_loader:
+            # Remove the extra dimension from the bezier curves.
+            bezier_curves = bezier_curves.squeeze(-2)
+            # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim)
+            bezier_curves = bezier_curves.permute(1, 0, 2)
+
             # Move the batch data to the device (CPU or GPU).
             bezier_curves, labels = (
                 bezier_curves.to(DEVICE),
@@ -281,14 +265,20 @@ def _test_model(
             # Calculate the log probabilities using log softmax.
             log_probs = logits.log_softmax(2)
             # Create input_lengths tensor for the CTC loss function.
+            actual_batch_size = bezier_curves.size(1)
             input_lengths = torch.full(
-                size=(logits.size(0),),
-                fill_value=logits.size(1),
+                size=(actual_batch_size,),
+                fill_value=logits.size(0),
                 dtype=torch.long,
+                device=DEVICE,
             )
 
             # Calculate target_lengths for the current batch.
-            target_lengths = test_dataset.target_lengths[: len(test_loader)]
+            target_lengths = torch.tensor(
+                [len(label) for label in labels],
+                dtype=torch.long,
+                device=DEVICE,
+            )
 
             # Calculate the CTC loss.
             loss = criterion(log_probs, labels, input_lengths, target_lengths)
@@ -330,16 +320,9 @@ def train_model(model_type: ModelType) -> nn.Module:
         test_dataset=test_dataset,
     )
 
-    max_num_curves = _get_max_num_bezier_curves(
-        train_dataset=train_dataset,
-        val_1_dataset=val_1_dataset,
-        val_2_dataset=val_2_dataset,
-        test_dataset=test_dataset,
-    )
-    bezier_curve_dimension = train_dataset.all_bezier_curves[0].shape[1]
+    bezier_curve_dimension = train_dataset.all_bezier_curves[0].shape[-1]
 
     model = model_type.value(
-        num_bezier_curves=max_num_curves,
         bezier_curve_dimension=bezier_curve_dimension,
         hidden_size=HIDDEN_SIZE,
         num_classes=NUM_CLASSES,
@@ -359,20 +342,13 @@ def train_model(model_type: ModelType) -> nn.Module:
             criterion=criterion,
             optimizer=optimizer,
             train_loader=train_loader,
-            train_dataset=train_dataset,
         )
         # Validate the model on the validation datasets.
         val_1_loss = _validate_epoch(
-            model=model,
-            criterion=criterion,
-            val_loader=val_1_loader,
-            val_dataset=val_1_dataset,
+            model=model, criterion=criterion, val_loader=val_1_loader,
         )
         val_2_loss = _validate_epoch(
-            model=model,
-            criterion=criterion,
-            val_loader=val_2_loader,
-            val_dataset=val_2_dataset,
+            model=model, criterion=criterion, val_loader=val_2_loader,
         )
         # Calculate the average validation loss.
         avg_val_loss = (val_1_loss + val_2_loss) / 2
@@ -388,10 +364,7 @@ def train_model(model_type: ModelType) -> nn.Module:
 
     # Evaluate the model on the test dataset.
     test_loss = _test_model(
-        model=model,
-        criterion=criterion,
-        test_loader=test_loader,
-        test_dataset=test_dataset,
+        model=model, criterion=criterion, test_loader=test_loader,
     )
     print(f"Test Loss: {test_loss:.4f}")
 
@@ -399,7 +372,9 @@ def train_model(model_type: ModelType) -> nn.Module:
     Path("models").mkdir(parents=True, exist_ok=True)
 
     # Save the trained model.
-    torch.save(model.state_dict(), f"models/{model.name.lower()}_model.ckpt")
+    torch.save(
+        model.state_dict(), f"models/{model_type.name.lower()}_model.ckpt"
+    )
 
     # Return the trained model.
     return model
@@ -409,4 +384,4 @@ if __name__ == "__main__":
     if not extraction.EXTRACTED_DATA_PATH.exists():
         extraction.extract_all_data()
 
-    train_model(model_type=ModelType.LSTM)
+    train_model(model_type=ModelType.RNN)

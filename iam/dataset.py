@@ -57,7 +57,7 @@ class StrokeBezierDataset(Dataset):
         self.all_bezier_curves = torch.from_numpy(
             all_bezier_data[f"{dataset_type_name}_bezier_curves"]
         ).float()
-        self.max_num_bezier_curves = int(torch.max(self.all_bezier_curves))
+        self.max_num_bezier_curves = self.all_bezier_curves.shape[1]
 
         # The length of each label, prior to padding.
         self.target_lengths = torch.tensor(
