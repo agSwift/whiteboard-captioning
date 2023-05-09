@@ -1,7 +1,7 @@
 from enum import Enum
 from pathlib import Path
+import matplotlib.pyplot as plt
 import numpy as np
-from py import test
 
 import torch
 from torch import nn, optim
@@ -11,12 +11,18 @@ import extraction
 import dataset
 import rnn
 
+INDEX_TO_CHAR = {
+    index: char for char, index in dataset.CHAR_TO_INDEX.items()
+}
+print(INDEX_TO_CHAR)
+
 # Hyperparameters.
 BATCH_SIZE = 64
-NUM_EPOCHS = 5
-HIDDEN_SIZE = 64
-NUM_CLASSES = len(dataset.CHAR_TO_INDEX)
-NUM_LAYERS = 2
+NUM_EPOCHS = 50
+HIDDEN_SIZE = 512
+NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1 # Add 1 for the blank character in CTC.
+NUM_LAYERS = 7
+DROPOUT_RATE = 0.3
 LEARNING_RATE = 3e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -121,12 +127,13 @@ def _train_epoch(
 
     # Iterate through batches in the training dataset.
     for bezier_curves, labels in train_loader:
-        # Remove the extra dimension from the bezier curves.
-        bezier_curves = bezier_curves.squeeze(-2)
-        # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim)
-        bezier_curves = bezier_curves.permute(1, 0, 2)
         # Move the batch data to the device (CPU or GPU).
         bezier_curves, labels = bezier_curves.to(DEVICE), labels.to(DEVICE)
+
+        # Remove the extra dimension from the bezier curves.
+        bezier_curves = bezier_curves.squeeze(-2)
+        # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim).
+        bezier_curves = bezier_curves.permute(1, 0, 2)
 
         # Clear the gradients of the model parameters.
         optimizer.zero_grad()
@@ -148,8 +155,9 @@ def _train_epoch(
         )
 
         # Calculate target_lengths for the current batch.
+        labels_no_padding = [label[label != -1] for label in labels]
         target_lengths = torch.tensor(
-            [len(label) for label in labels], dtype=torch.long, device=DEVICE,
+            [len(label) for label in labels_no_padding], dtype=torch.long, device=DEVICE,
         )
 
         # Calculate the CTC loss.
@@ -190,7 +198,7 @@ def _validate_epoch(
         for bezier_curves, labels in val_loader:
             # Remove the extra dimension from the bezier curves.
             bezier_curves = bezier_curves.squeeze(-2)
-            # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim)
+            # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim).
             bezier_curves = bezier_curves.permute(1, 0, 2)
             # Move the batch data to the device (CPU or GPU).
             bezier_curves, labels = (
@@ -213,10 +221,9 @@ def _validate_epoch(
             )
 
             # Calculate target_lengths for the current batch.
+            labels_no_padding = [label[label != -1] for label in labels]
             target_lengths = torch.tensor(
-                [len(label) for label in labels],
-                dtype=torch.long,
-                device=DEVICE,
+                [len(label) for label in labels_no_padding], dtype=torch.long, device=DEVICE,
             )
 
             # Calculate the CTC loss.
@@ -251,7 +258,7 @@ def _test_model(
         for bezier_curves, labels in test_loader:
             # Remove the extra dimension from the bezier curves.
             bezier_curves = bezier_curves.squeeze(-2)
-            # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim)
+            # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim).
             bezier_curves = bezier_curves.permute(1, 0, 2)
 
             # Move the batch data to the device (CPU or GPU).
@@ -274,10 +281,22 @@ def _test_model(
             )
 
             # Calculate target_lengths for the current batch.
+            labels_no_padding = [label[label != -1] for label in labels]
+
+            predictions = log_probs.argmax(2).detach().cpu().numpy().T
+            predictions = [
+                "".join([INDEX_TO_CHAR[index] for index in prediction])
+                for prediction in predictions
+            ]
+            labels_to_chars = [
+                "".join([INDEX_TO_CHAR[index] for index in label.detach().cpu().numpy()])
+                for label in labels_no_padding
+            ]
+            # print('Prediction: ', predictions[0])
+            # print('Label: ', labels_to_chars[0])
+            
             target_lengths = torch.tensor(
-                [len(label) for label in labels],
-                dtype=torch.long,
-                device=DEVICE,
+                [len(label) for label in labels_no_padding], dtype=torch.long, device=DEVICE,
             )
 
             # Calculate the CTC loss.
@@ -290,22 +309,29 @@ def _test_model(
     return test_loss
 
 
-def train_model(model_type: ModelType) -> nn.Module:
+def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[float]]:
     """Train and evaluate the given model on the training, validation and test datasets.
     
     Args:
         model_type (ModelType): The type of model to train.
 
     Returns:
-        nn.Module: The trained model.
+        tuple[nn.Module, list[float], list[float]]: A tuple containing the trained model,
+            the list of validation losses and the list of test losses.
     """
-    # Extract and load the datasets.
     (
         train_dataset,
         val_1_dataset,
         val_2_dataset,
         test_dataset,
     ) = _extract_load_datasets()
+
+    print(
+        f"Train dataset size: {len(train_dataset)}\n"
+        f"Validation 1 dataset size: {len(val_1_dataset)}\n"
+        f"Validation 2 dataset size: {len(val_2_dataset)}\n"
+        f"Test dataset size: {len(test_dataset)}\n"
+    )
 
     # Create data loaders for the datasets.
     (
@@ -327,6 +353,7 @@ def train_model(model_type: ModelType) -> nn.Module:
         hidden_size=HIDDEN_SIZE,
         num_classes=NUM_CLASSES,
         num_layers=NUM_LAYERS,
+        dropout=DROPOUT_RATE,
         device=DEVICE,
     ).to(DEVICE)
 
@@ -334,7 +361,10 @@ def train_model(model_type: ModelType) -> nn.Module:
     criterion = nn.CTCLoss(blank=0, zero_infinity=True)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    # Start the training loop
+    train_losses = []
+    val_losses = []
+
+    # Start the training loop.
     for epoch in range(NUM_EPOCHS):
         # Train the model for one epoch.
         train_loss = _train_epoch(
@@ -343,6 +373,8 @@ def train_model(model_type: ModelType) -> nn.Module:
             optimizer=optimizer,
             train_loader=train_loader,
         )
+        train_losses.append(train_loss)
+
         # Validate the model on the validation datasets.
         val_1_loss = _validate_epoch(
             model=model, criterion=criterion, val_loader=val_1_loader,
@@ -352,6 +384,7 @@ def train_model(model_type: ModelType) -> nn.Module:
         )
         # Calculate the average validation loss.
         avg_val_loss = (val_1_loss + val_2_loss) / 2
+        val_losses.append(avg_val_loss)
 
         # Print the losses for the current epoch.
         print(
@@ -377,11 +410,40 @@ def train_model(model_type: ModelType) -> nn.Module:
     )
 
     # Return the trained model.
-    return model
+    return model, train_losses, val_losses
+
+def plot_losses(train_losses: list[float], val_losses: list[float], model_type: ModelType):
+    """Plot the training and validation losses for the given model.
+    
+    Args:
+        train_losses (list[float]): The training losses.
+        val_losses (list[float]): The validation losses.
+        model_type (ModelType): The type of model.
+        
+    Returns:
+        None
+    """
+    epochs = range(1, NUM_EPOCHS + 1)
+
+    plt.figure()
+    plt.plot(epochs, train_losses, label="Training Loss")
+    plt.plot(epochs, val_losses, label="Validation Loss")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.title(f"{model_type.name} Training and Validation Loss")
+    plt.savefig(f"{model_type.name.lower()}_loss_plot.png")
+    plt.show()
 
 
 if __name__ == "__main__":
     if not extraction.EXTRACTED_DATA_PATH.exists():
         extraction.extract_all_data()
 
-    train_model(model_type=ModelType.RNN)
+    rnn_model, rnn_train_losses, rnn_val_losses = train_model(model_type=ModelType.RNN)
+    # lstm_model, lstm_train_losses, lstm_val_losses = train_model(model_type=ModelType.LSTM)
+    # gru_model, gru_train_losses, gru_val_losses = train_model(model_type=ModelType.GRU)
+
+    plot_losses(rnn_train_losses, rnn_val_losses, ModelType.RNN)
+    # plot_losses(lstm_train_losses, lstm_val_losses, ModelType.LSTM)
+    # plot_losses(gru_train_losses, gru_val_losses, ModelType.GRU)

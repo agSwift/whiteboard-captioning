@@ -24,6 +24,7 @@ class BaseModel(nn.Module):
         num_classes: int,
         num_layers: int,
         rnn_type: RNNType,
+        dropout: float = 0.0,
         device: torch.device = torch.device("cpu"),
     ):
         super().__init__()
@@ -32,8 +33,8 @@ class BaseModel(nn.Module):
 
         # Output linear layer for logits.
         self.fc = nn.Linear(
-            hidden_size, num_classes + 1
-        )  # Account for the blank symbol in CTC.
+            hidden_size, num_classes
+        )
 
         if rnn_type == RNNType.RNN:
             self.rnn = nn.RNN(bezier_curve_dimension, hidden_size, num_layers,)
@@ -48,6 +49,7 @@ class BaseModel(nn.Module):
                 f"Invalid RNN type: {rnn_type}. Must be one of {RNNType}."
             )
 
+        self.dropout = nn.Dropout(dropout)
         self.device = device
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -59,9 +61,10 @@ class BaseModel(nn.Module):
         
         Returns:
             torch.Tensor: The output tensor of shape
-                (batch_size, num_classes + 1, num_bezier_curves).
+                (batch_size, num_classes, num_bezier_curves).
         """
         out, _ = self.rnn(x)
+        out = self.dropout(out)
 
         out = self.fc(
             out
@@ -82,6 +85,7 @@ class RNN(BaseModel):
         hidden_size: int,
         num_classes: int,
         num_layers: int,
+        dropout: float = 0.0,
         device: torch.device = torch.device("cpu"),
     ):
         super().__init__(
@@ -90,6 +94,7 @@ class RNN(BaseModel):
             num_classes=num_classes,
             num_layers=num_layers,
             rnn_type=RNNType.RNN,
+            dropout=dropout,
             device=device,
         )
 
@@ -104,6 +109,7 @@ class LSTM(BaseModel):
         hidden_size: int,
         num_classes: int,
         num_layers: int,
+        dropout: float = 0.0,
         device: torch.device = torch.device("cpu"),
     ):
         super().__init__(
@@ -112,6 +118,7 @@ class LSTM(BaseModel):
             num_classes=num_classes,
             num_layers=num_layers,
             rnn_type=RNNType.LSTM,
+            dropout=dropout,
             device=device,
         )
 
@@ -126,6 +133,7 @@ class GRU(BaseModel):
         hidden_size: int,
         num_classes: int,
         num_layers: int,
+        dropout: float = 0.0,
         device: torch.device = torch.device("cpu"),
     ):
         super().__init__(
@@ -134,5 +142,6 @@ class GRU(BaseModel):
             num_classes=num_classes,
             num_layers=num_layers,
             rnn_type=RNNType.GRU,
+            dropout=dropout,
             device=device,
         )

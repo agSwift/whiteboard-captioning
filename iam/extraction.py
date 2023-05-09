@@ -340,7 +340,7 @@ def _fit_stroke_with_bezier_curve(
         return np.zeros((1, 10))
 
     # Combine x and y points into a single numpy array.
-    points = np.column_stack((stroke.x_points, stroke.y_points))
+    stroke_points = np.column_stack((stroke.x_points, stroke.y_points))
 
     def bezier_curve(
         s_param: float,
@@ -357,19 +357,19 @@ def _fit_stroke_with_bezier_curve(
         Returns:
             A numpy array containing the x and y coordinates of the Bezier curve at the given parameter s.
         """
-        x_bezier_points = (
+        x_bezier_point = (
             alpha[0]
             + alpha[1] * s_param
             + alpha[2] * s_param ** 2
             + alpha[3] * s_param ** 3
         )
-        y_bezier_points = (
+        y_bezier_point = (
             beta[0]
             + beta[1] * s_param
             + beta[2] * s_param ** 2
             + beta[3] * s_param ** 3
         )
-        return np.array([x_bezier_points, y_bezier_points])
+        return np.array([x_bezier_point, y_bezier_point])
 
     def objective_function(
         coefficients: npt.NDArray[np.float_], points: npt.NDArray[np.float_]
@@ -394,17 +394,21 @@ def _fit_stroke_with_bezier_curve(
     # Find the coefficients that minimize the SSE.
     initial_coefficients = np.ones(8)
     result = scipy.optimize.minimize(
-        objective_function, initial_coefficients, args=(points,)
+        objective_function, initial_coefficients, args=(stroke_points,)
     )
     alpha, beta = result.x[:4], result.x[4:]
 
-    # Calculate the end point differences and distances.
+    # Distance between end points.
     end_point_diff = np.array([alpha[3], beta[3]])
 
+    # Distance between first control point and starting point, 
+    # normalized by the distance between end points.
     control_point_dist1 = np.linalg.norm(
         np.array([alpha[1], beta[1]])
     ) / np.linalg.norm(end_point_diff)
 
+    # Distance between second control point and starting point,
+    # normalized by the distance between end points.
     control_point_dist2 = np.linalg.norm(
         np.array([alpha[2], beta[2]])
     ) / np.linalg.norm(end_point_diff)
@@ -413,7 +417,8 @@ def _fit_stroke_with_bezier_curve(
     angle1 = math.atan2(beta[1], alpha[1])
     angle2 = math.atan2(beta[2], alpha[2])
 
-    # Calculate the time coefficients.
+    # Calculate the time coefficients, which gives information about how the
+    # curve's shape changes over time.
     time_range = np.max(stroke.time_stamps) - np.min(stroke.time_stamps)
     time_coefficients = np.array(
         [time_range * alpha[1], time_range * alpha[2], time_range * alpha[3]]
@@ -484,7 +489,7 @@ def _set_up_train_val_test_data_stores() -> tuple[
     def get_train_val_test_label_file_names() -> tuple[
         set[str], set[str], set[str]
     ]:
-        """Get the label file names for the train, first validation, second validation, and test sets.
+        """Get the label file names for train, first validation, second validation, and test sets.
 
         Returns:
             tuple[set[str], set[str], set[str]]: A tuple of sets of label file names for the train,

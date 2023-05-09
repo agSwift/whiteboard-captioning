@@ -7,7 +7,7 @@ from numpy.lib.npyio import NpzFile
 
 
 CHAR_TO_INDEX = {
-    char: index + 1 for index, char in enumerate(string.ascii_letters + " ")
+    char: index + 1 for index, char in enumerate(string.ascii_letters + string.digits + " ")
 }
 
 
@@ -108,7 +108,7 @@ class StrokeBezierDataset(Dataset):
         Returns:
             torch.Tensor: The encoded label as a tensor of indices.
         """
-        # Only keep alphabetic characters and spaces in the label.
+        # Only keep alphabetic characters and spaces.
         label = "".join([char for char in label if char in CHAR_TO_INDEX])
 
         # Encode each character in the label as an index.
