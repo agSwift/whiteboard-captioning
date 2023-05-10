@@ -64,13 +64,13 @@ class BaseModel(nn.Module):
                 (batch_size, num_classes, num_bezier_curves).
         """
         out, _ = self.rnn(x)
-        out = self.dropout(out)
+        # out = self.dropout(out)
 
         out = self.fc(
             out
         )  # Apply the fully connected layer to all time steps.
         out = torch.nn.functional.log_softmax(
-            out, dim=2
+            out, dim=-1
         )  # Apply log_softmax to the output.
         return out
 

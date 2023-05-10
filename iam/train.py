@@ -14,15 +14,14 @@ import rnn
 INDEX_TO_CHAR = {
     index: char for char, index in dataset.CHAR_TO_INDEX.items()
 }
-print(INDEX_TO_CHAR)
 
 # Hyperparameters.
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 NUM_EPOCHS = 50
 HIDDEN_SIZE = 512
-NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1 # Add 1 for the blank character in CTC.
-NUM_LAYERS = 7
-DROPOUT_RATE = 0.3
+NUM_CLASSES = len(dataset.CHAR_TO_INDEX)
+NUM_LAYERS = 1
+DROPOUT_RATE = 0.5
 LEARNING_RATE = 3e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -140,9 +139,6 @@ def _train_epoch(
 
         # Perform a forward pass through the model.
         logits = model(bezier_curves)
-        # Calculate the log probabilities using log softmax.
-        log_probs = logits.log_softmax(2).detach().requires_grad_()
-
         # Create input_lengths tensor for the CTC loss function.
         actual_batch_size = bezier_curves.size(1)
 
@@ -150,18 +146,18 @@ def _train_epoch(
         input_lengths = torch.full(
             size=(actual_batch_size,),
             fill_value=logits.size(0),
-            dtype=torch.long,
+            dtype=torch.int32,
             device=DEVICE,
         )
 
         # Calculate target_lengths for the current batch.
         labels_no_padding = [label[label != -1] for label in labels]
         target_lengths = torch.tensor(
-            [len(label) for label in labels_no_padding], dtype=torch.long, device=DEVICE,
+            [len(label) for label in labels_no_padding], dtype=torch.int32, device=DEVICE,
         )
 
         # Calculate the CTC loss.
-        loss = criterion(log_probs, labels, input_lengths, target_lengths)
+        loss = criterion(logits, labels, input_lengths, target_lengths)
         # Perform backpropagation.
         loss.backward()
 
@@ -208,8 +204,6 @@ def _validate_epoch(
 
             # Perform a forward pass through the model.
             logits = model(bezier_curves)
-            # Calculate the log probabilities using log softmax.
-            log_probs = logits.log_softmax(2)
 
             actual_batch_size = bezier_curves.size(1)
             # Create input_lengths tensor for the CTC loss function.
@@ -222,12 +216,25 @@ def _validate_epoch(
 
             # Calculate target_lengths for the current batch.
             labels_no_padding = [label[label != -1] for label in labels]
+            predictions = logits.argmax(2).detach().cpu().numpy().T
+            # print("predictions shape: ", predictions[0])
+            predictions = [
+                "".join([INDEX_TO_CHAR[index] for index in prediction if index != 0])
+                for prediction in predictions
+            ]
+            labels_to_chars = [
+                "".join([INDEX_TO_CHAR[index] for index in label.detach().cpu().numpy()])
+                for label in labels_no_padding
+            ]
+            print('Prediction: ', predictions[0])
+            print('Label: ', labels_to_chars[0])
+
             target_lengths = torch.tensor(
                 [len(label) for label in labels_no_padding], dtype=torch.long, device=DEVICE,
             )
 
             # Calculate the CTC loss.
-            loss = criterion(log_probs, labels, input_lengths, target_lengths)
+            loss = criterion(logits, labels, input_lengths, target_lengths)
             # Accumulate the validation loss.
             val_loss += loss.item()
 
@@ -269,8 +276,7 @@ def _test_model(
 
             # Perform a forward pass through the model.
             logits = model(bezier_curves)
-            # Calculate the log probabilities using log softmax.
-            log_probs = logits.log_softmax(2)
+
             # Create input_lengths tensor for the CTC loss function.
             actual_batch_size = bezier_curves.size(1)
             input_lengths = torch.full(
@@ -282,25 +288,12 @@ def _test_model(
 
             # Calculate target_lengths for the current batch.
             labels_no_padding = [label[label != -1] for label in labels]
-
-            predictions = log_probs.argmax(2).detach().cpu().numpy().T
-            predictions = [
-                "".join([INDEX_TO_CHAR[index] for index in prediction])
-                for prediction in predictions
-            ]
-            labels_to_chars = [
-                "".join([INDEX_TO_CHAR[index] for index in label.detach().cpu().numpy()])
-                for label in labels_no_padding
-            ]
-            # print('Prediction: ', predictions[0])
-            # print('Label: ', labels_to_chars[0])
-            
             target_lengths = torch.tensor(
                 [len(label) for label in labels_no_padding], dtype=torch.long, device=DEVICE,
             )
 
             # Calculate the CTC loss.
-            loss = criterion(log_probs, labels, input_lengths, target_lengths)
+            loss = criterion(logits, labels, input_lengths, target_lengths)
             # Accumulate the test loss.
             test_loss += loss.item()
 
@@ -358,7 +351,7 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
     ).to(DEVICE)
 
     # Set up the loss function and optimizer.
-    criterion = nn.CTCLoss(blank=0, zero_infinity=True)
+    criterion = nn.CTCLoss(blank=NUM_CLASSES-1, zero_infinity=True, reduction="mean")
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     train_losses = []
