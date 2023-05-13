@@ -7,7 +7,7 @@ from numpy.lib.npyio import NpzFile
 
 
 CHAR_TO_INDEX = {
-    char: index + 1 for index, char in enumerate(string.ascii_letters + string.digits + " " + "*")
+    char: index + 1 for index, char in enumerate(string.ascii_letters + string.digits + " ")
 }
 
 
