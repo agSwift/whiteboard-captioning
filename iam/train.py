@@ -21,12 +21,12 @@ INDEX_TO_CHAR = {
 # INDEX_TO_CHAR[0] = "*" # Blank character.
 
 # Hyperparameters.
-BATCH_SIZE = 32
-NUM_EPOCHS = 2
+BATCH_SIZE = 64
+NUM_EPOCHS = 100
 HIDDEN_SIZE = 512
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1 # +1 for the blank character.
-NUM_LAYERS = 3
-DROPOUT_RATE = 0.3
+NUM_LAYERS = 5
+DROPOUT_RATE = 0.5
 LEARNING_RATE = 3e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -487,10 +487,11 @@ if __name__ == "__main__":
         extraction.extract_all_data()
 
     (
-        rnn_model,
-        rnn_train_losses,
-        rnn_val_losses,
-        rnn_val_cers,
-        rnn_val_wers
-    ) = train_model(model_type=ModelType.RNN)
+        lstm_model,
+        lstm_train_losses,
+        lstm_val_losses,
+        lstm_val_cers,
+        lstm_val_wers
+    ) = train_model(model_type=ModelType.LSTM)
+    
 
