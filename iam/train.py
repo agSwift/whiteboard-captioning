@@ -1,16 +1,18 @@
 from enum import Enum
 from pathlib import Path
-import matplotlib.pyplot as plt
 import numpy as np
 
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from jiwer import cer, wer
+import wandb
 
 import extraction
 import dataset
 import rnn
+
+wandb.login()
 
 INDEX_TO_CHAR = {
     index: char for char, index in dataset.CHAR_TO_INDEX.items()
@@ -19,7 +21,7 @@ INDEX_TO_CHAR = {
 
 # Hyperparameters.
 BATCH_SIZE = 32
-NUM_EPOCHS = 30
+NUM_EPOCHS = 2
 HIDDEN_SIZE = 512
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1 # +1 for the blank character.
 NUM_LAYERS = 3
@@ -27,6 +29,14 @@ DROPOUT_RATE = 0.3
 LEARNING_RATE = 3e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+run = wandb.init(
+    # Set the project where this run will be logged.
+    project="drawing-gui",
+    # Track hyperparameters and run metadata.
+    config={
+        "learning_rate": LEARNING_RATE,
+        "epochs": NUM_EPOCHS,
+    })
 
 class ModelType(Enum):
     """An enum for the model types."""
@@ -119,11 +129,11 @@ def _train_epoch(
         train_loader (DataLoader): The training data loader.
         
     Returns:
-        float: The average training loss for the epoch.
+        float: The average training loss.
     """
     # Set the model to training mode.
     model.train()
-    # Initialize the training loss.
+
     train_loss = 0.0
 
     # Iterate through batches in the training dataset.
@@ -168,9 +178,8 @@ def _train_epoch(
         # Accumulate the training loss.
         train_loss += loss.item()
 
-    # Calculate the average training loss for the epoch.
-    train_loss /= len(train_loader)
-    return train_loss
+    # Calculate the average training loss.
+    return train_loss / len(train_loader)
 
 
 def _validate_epoch(
@@ -257,7 +266,7 @@ def _validate_epoch(
 
 def _test_model(
     *, model: nn.Module, criterion: nn.CTCLoss, test_loader: DataLoader,
-) -> float:
+) -> tuple[float, float, float]:
     """Tests the model on the given test dataset.
     
     Args:
@@ -266,12 +275,14 @@ def _test_model(
         test_loader (DataLoader): The test data loader.
         
     Returns:
-        float: The average test loss.
+        tuple[float, float, float]: The average test loss, CER, and WER.
     """
     # Set the model to evaluation mode.
     model.eval()
-    # Initialize the test loss.
+
     test_loss = 0.0
+    total_cer = 0.0
+    total_wer = 0.0
 
     # Evaluate the model on the test dataset.
     with torch.no_grad():
@@ -304,15 +315,33 @@ def _test_model(
             target_lengths = torch.tensor(
                 [len(label) for label in labels_no_padding], dtype=torch.int32, device=DEVICE,
             )
+            predictions = logits.argmax(2).detach().cpu().numpy().T
+            predictions = [
+                "".join([INDEX_TO_CHAR[index] for index in prediction if index != 0])
+                for prediction in predictions
+            ]
+            labels_to_chars = [
+                "".join([INDEX_TO_CHAR[index] for index in label.detach().cpu().numpy()])
+                for label in labels_no_padding
+            ]
+
+            char_error_rate = cer(labels_to_chars, predictions)
+            word_error_rate = wer(labels_to_chars, predictions)
+            wandb.log({"Test CER": char_error_rate, "Test WER": word_error_rate})
+            total_cer += char_error_rate
+            total_wer += word_error_rate
 
             # Calculate the CTC loss.
             loss = criterion(logits, labels, input_lengths, target_lengths)
             # Accumulate the test loss.
             test_loss += loss.item()
+            wandb.log({"Test Loss": loss.item()})
 
-    # Calculate the average test loss
-    test_loss /= len(test_loader)
-    return test_loss
+    avg_test_loss = test_loss / len(test_loader)
+    avg_cer = total_cer / len(test_loader)
+    avg_wer = total_wer / len(test_loader)
+
+    return avg_test_loss, avg_cer, avg_wer
 
 
 def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[float], list[float], list[float]]:
@@ -367,11 +396,6 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
     criterion = nn.CTCLoss(blank=0, zero_infinity=True, reduction="mean")
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    train_losses = []
-    val_losses = []
-    val_cers = []
-    val_wers = []
-
     # Start the training loop.
     for epoch in range(NUM_EPOCHS):
         # Train the model for one epoch.
@@ -381,7 +405,7 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
             optimizer=optimizer,
             train_loader=train_loader,
         )
-        train_losses.append(train_loss)
+        wandb.log({"Training Loss": train_loss})
 
         # Validate the model on the validation datasets.
         val_1_loss, val_1_cer, val_1_wer = _validate_epoch(
@@ -395,10 +419,7 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
         avg_val_loss = (val_1_loss + val_2_loss) / 2
         avg_val_cer = (val_1_cer + val_2_cer) / 2
         avg_val_wer = (val_1_wer + val_2_wer) / 2
-
-        val_losses.append(avg_val_loss)
-        val_cers.append(avg_val_cer)
-        val_wers.append(avg_val_wer)
+        wandb.log({"Validation Loss": avg_val_loss, "Validation CER": avg_val_cer, "Validation WER": avg_val_wer})
 
         print(
             f"Epoch {epoch + 1}/{NUM_EPOCHS}, "
@@ -409,10 +430,10 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
         )
 
     # Evaluate the model on the test dataset.
-    test_loss = _test_model(
+    test_loss, test_cer, test_wer = _test_model(
         model=model, criterion=criterion, test_loader=test_loader,
     )
-    print(f"Test Loss: {test_loss:.4f}")
+    print(f"Test Loss: {test_loss:.4f}, Test CER: {test_cer:.4f}, Test WER: {test_wer:.4f}")
 
     # Create a models directory if it doesn't exist.
     Path("models").mkdir(parents=True, exist_ok=True)
@@ -422,67 +443,7 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
         model.state_dict(), f"models/{model_type.name.lower()}_model.ckpt"
     )
 
-    return model, train_losses, val_losses, val_cers, val_wers
-
-def plot_losses(train_losses: list[float], val_losses: list[float], model_type: ModelType):
-    """Plot the training and validation losses for the given model.
-    
-    Args:
-        train_losses (list[float]): The training losses.
-        val_losses (list[float]): The validation losses.
-        model_type (ModelType): The type of model.
-        
-    Returns:
-        None
-    """
-    epochs = range(1, NUM_EPOCHS + 1)
-
-    plt.figure()
-    plt.plot(epochs, train_losses, label="Training Loss")
-    plt.plot(epochs, val_losses, label="Validation Loss")
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.title(f"{model_type.name} Training and Validation Loss")
-    plt.savefig(f"{model_type.name.lower()}_loss_plot.png")
-    plt.show()
-
-
-def plot_metrics(
-    cer_values: list[float],
-    wer_values: list[float],
-    model_type: ModelType,
-):
-    """Plot the Character Error Rate (CER) and Word Error Rate (WER) for the given model.
-    
-    Args:
-        cer_values (list[float]): The CER values.
-        wer_values (list[float]): The WER values.
-        model_type (ModelType): The type of model.
-        
-    Returns:
-        None
-    """
-    epochs = range(1, NUM_EPOCHS + 1)
-
-    plt.figure(figsize=(12, 6))
-
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs, cer_values, label="CER")
-    plt.xlabel("Epochs")
-    plt.ylabel("CER")
-    plt.title(f"CER for {model_type.name} model")
-    plt.legend()
-
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs, wer_values, label="WER")
-    plt.xlabel("Epochs")
-    plt.ylabel("WER")
-    plt.title(f"WER for {model_type.name} model")
-    plt.legend()
-
-    plt.tight_layout()
-    plt.show()
+    return model
 
 
 if __name__ == "__main__":
@@ -497,5 +458,3 @@ if __name__ == "__main__":
         rnn_val_wers
     ) = train_model(model_type=ModelType.RNN)
 
-    plot_losses(rnn_train_losses, rnn_val_losses, ModelType.RNN)
-    plot_metrics(rnn_val_cers, rnn_val_wers, ModelType.RNN)
