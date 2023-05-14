@@ -1,3 +1,4 @@
+import copy
 from enum import Enum
 from pathlib import Path
 import numpy as np
@@ -44,6 +45,35 @@ class ModelType(Enum):
     RNN = rnn.RNN
     LSTM = rnn.LSTM
     GRU = rnn.GRU
+
+class EarlyStopping:
+    def __init__(self, patience=1, min_delta=1e-3, restore_best_weight=True):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.restore_best_weight = restore_best_weight
+        self.best_model = None
+        self.best_loss = None
+        self.counter = 0
+        self.status = ""
+
+    def __call__(self, model, val_loss):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+            self.best_model = copy.deepcopy(model)
+        elif self.best_loss - val_loss > self.min_delta:
+            self.best_loss = val_loss
+            self.counter = 0
+            self.best_model.load_state_dict(model.state_dict())
+        elif self.best_loss - val_loss < self.min_delta:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.status = f"Early stopped on {self.counter}"
+                if self.restore_best_weight:
+                    model.load_state_dict(self.best_model.state_dict())
+                return True
+        self.status = f"{self.counter}/{self.patience}"
+        print(f"Early Stopping Status: {self.status}")
+        return False
 
 
 def _extract_load_datasets() -> tuple[
@@ -392,6 +422,8 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
         device=DEVICE,
     ).to(DEVICE)
 
+    early_stopping = EarlyStopping()
+
     # Set up the loss function and optimizer.
     criterion = nn.CTCLoss(blank=0, zero_infinity=True, reduction="mean")
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -428,6 +460,10 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
             f"Avg Val CER: {avg_val_cer:.4f}, "
             f"Avg Val WER: {avg_val_wer:.4f}, "
         )
+
+        if early_stopping(model, avg_val_loss):
+            print("Early stopping")
+            break
 
     # Evaluate the model on the test dataset.
     test_loss, test_cer, test_wer = _test_model(
