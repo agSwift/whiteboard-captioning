@@ -6,10 +6,10 @@
 export PATH=/vol/bitbucket/ag2719/drawing/bin/:$PATH
 source activate
 
-. /vol/cuda/11.7.1/setup.sh
+. /vol/cuda/12.0.0/setup.sh
 TERM=vt100
 /usr/bin/nvidia-smi
 uptime
 
-srun python /vol/bitbucket/ag2719/drawing-gui/iam/train.py
+cd /vol/bitbucket/ag2719/drawing-gui/ && srun python ./iam/train.py
 
