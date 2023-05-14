@@ -4,3 +4,5 @@ matplotlib
 scipy
 jiwer
 wandb
+tqdm
+```
