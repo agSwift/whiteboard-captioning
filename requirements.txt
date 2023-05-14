@@ -3,3 +3,4 @@ torch
 matplotlib
 scipy
 jiwer
+wandb
