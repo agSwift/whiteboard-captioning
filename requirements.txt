@@ -5,4 +5,3 @@ scipy
 jiwer
 wandb
 tqdm
-```

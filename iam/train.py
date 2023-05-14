@@ -18,16 +18,17 @@ wandb.login()
 INDEX_TO_CHAR = {
     index: char for char, index in dataset.CHAR_TO_INDEX.items()
 }
-# INDEX_TO_CHAR[0] = "*" # Blank character.
+INDEX_TO_CHAR[0] = "*" # Epsilon character.
 
 # Hyperparameters.
 BATCH_SIZE = 64
-NUM_EPOCHS = 100
-HIDDEN_SIZE = 512
-NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1 # +1 for the blank character.
+NUM_EPOCHS = 200
+HIDDEN_SIZE = 256
+NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1 # +1 for the epsilon character.
 NUM_LAYERS = 5
-DROPOUT_RATE = 0.5
+DROPOUT_RATE = 0.3
 LEARNING_RATE = 3e-4
+PATIENCE = 20
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 run = wandb.init(
@@ -47,7 +48,7 @@ class ModelType(Enum):
     GRU = rnn.GRU
 
 class EarlyStopping:
-    def __init__(self, patience=1, min_delta=1e-3, restore_best_weight=True):
+    def __init__(self, patience=7, min_delta=1e-3, restore_best_weight=True):
         self.patience = patience
         self.min_delta = min_delta
         self.restore_best_weight = restore_best_weight
@@ -231,6 +232,7 @@ def _validate_epoch(
     val_loss = 0.0
     total_cer = 0.0
     total_wer = 0.0
+    total_samples = 0
 
     # Evaluate the model on the validation dataset.
     with torch.no_grad():
@@ -268,15 +270,22 @@ def _validate_epoch(
                 "".join([INDEX_TO_CHAR[index] for index in label.detach().cpu().numpy()])
                 for label in labels_no_padding
             ]
-            print('Prediction: ', predictions[0])
-            print('Label: ', labels_to_chars[0])
+            total_samples += len(labels_to_chars)
 
-            char_error_rate = cer(labels_to_chars, predictions)
-            word_error_rate = wer(labels_to_chars, predictions)
-            total_cer += char_error_rate
-            total_wer += word_error_rate
-            print(f"CER: {char_error_rate:.4f}, WER: {word_error_rate:.4f}")
-            print()
+            for i, (label, prediction) in enumerate(zip(labels_to_chars, predictions)):
+                char_error_rate = cer(label, prediction)
+                word_error_rate = wer(label, prediction)
+                wandb.log({"Validation - CER": char_error_rate, "Validation - WER": word_error_rate})
+
+                total_cer += char_error_rate
+                total_wer += word_error_rate
+
+                if i == 0:
+                    print(f"Label: {label}")
+                    print(f"Prediction: {prediction}")
+                    print(f"CER: {char_error_rate:.4f}")
+                    print(f"WER: {word_error_rate:.4f}")
+                    print()
 
             target_lengths = torch.tensor(
                 [len(label) for label in labels_no_padding], dtype=torch.int32, device=DEVICE,
@@ -287,9 +296,9 @@ def _validate_epoch(
             # Accumulate the validation loss.
             val_loss += loss.item()
 
-    avg_val_loss = val_loss / len(val_loader)
-    avg_cer = total_cer / len(val_loader)
-    avg_wer = total_wer / len(val_loader)
+    avg_val_loss = val_loss / total_samples
+    avg_cer = total_cer / total_samples
+    avg_wer = total_wer / total_samples
 
     return avg_val_loss, avg_cer, avg_wer
 
@@ -313,6 +322,7 @@ def _test_model(
     test_loss = 0.0
     total_cer = 0.0
     total_wer = 0.0
+    total_samples = 0
 
     # Evaluate the model on the test dataset.
     with torch.no_grad():
@@ -354,22 +364,25 @@ def _test_model(
                 "".join([INDEX_TO_CHAR[index] for index in label.detach().cpu().numpy()])
                 for label in labels_no_padding
             ]
+            total_samples += len(labels_to_chars)
 
-            char_error_rate = cer(labels_to_chars, predictions)
-            word_error_rate = wer(labels_to_chars, predictions)
-            wandb.log({"Test CER": char_error_rate, "Test WER": word_error_rate})
-            total_cer += char_error_rate
-            total_wer += word_error_rate
+            for label, prediction in zip(labels_to_chars, predictions):
+                char_error_rate = cer(label, prediction)
+                word_error_rate = wer(label, prediction)
+                wandb.log({"Test - CER": char_error_rate, "Test - WER": word_error_rate})
+
+                total_cer += char_error_rate
+                total_wer += word_error_rate
 
             # Calculate the CTC loss.
             loss = criterion(logits, labels, input_lengths, target_lengths)
             # Accumulate the test loss.
             test_loss += loss.item()
-            wandb.log({"Test Loss": loss.item()})
+            wandb.log({"Test - Loss": loss.item()})
 
-    avg_test_loss = test_loss / len(test_loader)
-    avg_cer = total_cer / len(test_loader)
-    avg_wer = total_wer / len(test_loader)
+    avg_test_loss = test_loss / total_samples
+    avg_cer = total_cer / total_samples
+    avg_wer = total_wer / total_samples
 
     return avg_test_loss, avg_cer, avg_wer
 
@@ -422,7 +435,7 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
         device=DEVICE,
     ).to(DEVICE)
 
-    early_stopping = EarlyStopping()
+    early_stopping = EarlyStopping(patience=PATIENCE)
 
     # Set up the loss function and optimizer.
     criterion = nn.CTCLoss(blank=0, zero_infinity=True, reduction="mean")
@@ -437,7 +450,7 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
             optimizer=optimizer,
             train_loader=train_loader,
         )
-        wandb.log({"Training Loss": train_loss})
+        wandb.log({"Training - Loss": train_loss})
 
         # Validate the model on the validation datasets.
         val_1_loss, val_1_cer, val_1_wer = _validate_epoch(
@@ -451,7 +464,7 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
         avg_val_loss = (val_1_loss + val_2_loss) / 2
         avg_val_cer = (val_1_cer + val_2_cer) / 2
         avg_val_wer = (val_1_wer + val_2_wer) / 2
-        wandb.log({"Validation Loss": avg_val_loss, "Validation CER": avg_val_cer, "Validation WER": avg_val_wer})
+        wandb.log({"Validation Per Epoch - Loss": avg_val_loss, "Validation Per Epoch - CER": avg_val_cer, "Validation Per Epoch - WER": avg_val_wer})
 
         print(
             f"Epoch {epoch + 1}/{NUM_EPOCHS}, "
@@ -487,11 +500,21 @@ if __name__ == "__main__":
         extraction.extract_all_data()
 
     (
-        lstm_model,
-        lstm_train_losses,
-        lstm_val_losses,
-        lstm_val_cers,
-        lstm_val_wers
-    ) = train_model(model_type=ModelType.LSTM)
+        model,
+        train_losses,
+        val_losses,
+        val_cers,
+        val_wers
+    ) = train_model(model_type=ModelType.RNN)
+
+    # (
+    #     lstm_model,
+    #     lstm_train_losses,
+    #     lstm_val_losses,
+    #     lstm_val_cers,
+    #     lstm_val_wers
+    # ) = train_model(model_type=ModelType.LSTM)
+
+    
     
 
