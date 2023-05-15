@@ -16,7 +16,7 @@ import rnn
 wandb.login()
 
 INDEX_TO_CHAR = {index: char for char, index in dataset.CHAR_TO_INDEX.items()}
-INDEX_TO_CHAR[0] = "*"  # Epsilon character.
+INDEX_TO_CHAR[0] = "*"  # Epsilon character for the CTC loss.
 
 # Hyperparameters.
 BATCH_SIZE = 64
@@ -492,10 +492,10 @@ def train_model(
     ) = _extract_load_datasets()
 
     print(
-        f"Train dataset size: {len(train_dataset)}\n"
-        f"Validation 1 dataset size: {len(val_1_dataset)}\n"
-        f"Validation 2 dataset size: {len(val_2_dataset)}\n"
-        f"Test dataset size: {len(test_dataset)}\n"
+        f"Train Dataset Size: {len(train_dataset)}\n"
+        f"Val 1 Dataset Size: {len(val_1_dataset)}\n"
+        f"Val 2 Dataset Size: {len(val_2_dataset)}\n"
+        f"Test Dataset Size: {len(test_dataset)}\n"
     )
 
     # Create data loaders for the datasets.
@@ -557,18 +557,18 @@ def train_model(
         avg_val_wer = (val_1_wer + val_2_wer) / 2
         wandb.log(
             {
-                "Validation Per Epoch - Loss": avg_val_loss,
-                "Validation Per Epoch - CER": avg_val_cer,
-                "Validation Per Epoch - WER": avg_val_wer,
+                "Validation - Loss Per Epoch": avg_val_loss,
+                "Validation - CER Per Epoch": avg_val_cer,
+                "Validation - WER Per Epoch": avg_val_wer,
             }
         )
 
         print(
             f"Epoch {epoch + 1}/{NUM_EPOCHS}, "
             f"Train Loss: {train_loss:.4f}, "
-            f"Avg Val Loss: {avg_val_loss:.4f}, "
-            f"Avg Val CER: {avg_val_cer:.4f}, "
-            f"Avg Val WER: {avg_val_wer:.4f}, "
+            f"Val Loss: {avg_val_loss:.4f}, "
+            f"Val CER: {avg_val_cer:.4f}, "
+            f"Val WER: {avg_val_wer:.4f}, "
         )
 
         if early_stopping(model, avg_val_loss):
