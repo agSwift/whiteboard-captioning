@@ -32,18 +32,26 @@ class BaseModel(nn.Module):
         self.num_layers = num_layers
 
         # Output linear layer for logits.
-        self.fc = nn.Linear(
-            hidden_size, num_classes
-        )
+        self.fc = nn.Linear(hidden_size, num_classes)
 
         if rnn_type == RNNType.RNN:
-            self.rnn = nn.RNN(bezier_curve_dimension, hidden_size, num_layers,)
+            self.rnn = nn.RNN(
+                bezier_curve_dimension,
+                hidden_size,
+                num_layers,
+            )
         elif rnn_type == RNNType.LSTM:
             self.rnn = nn.LSTM(
-                bezier_curve_dimension, hidden_size, num_layers,
+                bezier_curve_dimension,
+                hidden_size,
+                num_layers,
             )
         elif rnn_type == RNNType.GRU:
-            self.rnn = nn.GRU(bezier_curve_dimension, hidden_size, num_layers,)
+            self.rnn = nn.GRU(
+                bezier_curve_dimension,
+                hidden_size,
+                num_layers,
+            )
         else:
             raise ValueError(
                 f"Invalid RNN type: {rnn_type}. Must be one of {RNNType}."
@@ -54,11 +62,11 @@ class BaseModel(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the model.
-        
+
         Args:
-            x (torch.Tensor): The input tensor of shape 
+            x (torch.Tensor): The input tensor of shape
                 (num_bezier_curves, batch_size, bezier_curve_dimension).
-        
+
         Returns:
             torch.Tensor: The output tensor of shape
                 (batch_size, num_classes, num_bezier_curves).

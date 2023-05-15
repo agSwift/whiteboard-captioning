@@ -191,7 +191,8 @@ def _parse_stroke_element(stroke_elem: ET.Element) -> StrokeData:
         stroke (ET.Element): The stroke element.
 
     Returns:
-        The stroke data, which contains the x points, y points, time stamps, and pen_ups information.
+        The stroke data, which contains the x points, y points, time stamps, 
+        and pen_ups information.
 
     Raises:
         ValueError: If the stroke element is invalid.
@@ -319,7 +320,7 @@ def _fit_stroke_with_bezier_curve(
     stroke: StrokeData,
 ) -> npt.NDArray[np.float_]:
     """Processes the stroke data and fits it with a Bezier curve.
-    
+
     Args:
         stroke (StrokeData): The stroke data.
 
@@ -360,14 +361,14 @@ def _fit_stroke_with_bezier_curve(
         x_bezier_point = (
             alpha[0]
             + alpha[1] * s_param
-            + alpha[2] * s_param ** 2
-            + alpha[3] * s_param ** 3
+            + alpha[2] * s_param**2
+            + alpha[3] * s_param**3
         )
         y_bezier_point = (
             beta[0]
             + beta[1] * s_param
-            + beta[2] * s_param ** 2
-            + beta[3] * s_param ** 3
+            + beta[2] * s_param**2
+            + beta[3] * s_param**3
         )
         return np.array([x_bezier_point, y_bezier_point])
 
@@ -375,11 +376,11 @@ def _fit_stroke_with_bezier_curve(
         coefficients: npt.NDArray[np.float_], points: npt.NDArray[np.float_]
     ) -> float:
         """Calculate the sum of squared errors (SSE) between Bezier curve points and given points.
-        
+
         Args:
             coefficients (npt.NDArray[np.float_]): The coefficients for the Bezier curve.
             points (npt.NDArray[np.float_]): The points to fit the curve to.
-            
+
         Returns:
             The SSE between the Bezier curve points and the given points.
         """
@@ -389,7 +390,7 @@ def _fit_stroke_with_bezier_curve(
             [bezier_curve(s, alpha, beta) for s in s_values]
         )
         errors = curve_points - points
-        return np.sum(errors ** 2)
+        return np.sum(errors**2)
 
     # Find the coefficients that minimize the SSE.
     initial_coefficients = np.ones(8)
@@ -401,7 +402,7 @@ def _fit_stroke_with_bezier_curve(
     # Distance between end points.
     end_point_diff = np.array([alpha[3], beta[3]])
 
-    # Distance between first control point and starting point, 
+    # Distance between first control point and starting point,
     # normalized by the distance between end points.
     control_point_dist1 = np.linalg.norm(
         np.array([alpha[1], beta[1]])
@@ -472,23 +473,23 @@ def _filter_and_get_stroke_file_paths(
     )
 
 
-def _set_up_train_val_test_data_stores() -> tuple[
-    BezierData, BezierData, BezierData, BezierData
-]:
+def _set_up_train_val_test_data_stores() -> (
+    tuple[BezierData, BezierData, BezierData, BezierData]
+):
     """Set up the data stores for the train, first validation, second validation, and test sets.
 
     Returns:
         tuple[BezierData, BezierData, BezierData, BezierData]: A tuple of BezierData objects for
             the train, first validation, second validation, and test sets.
-        
+
     Raises:
         ValueError: If the train, first validation, second validation, and test sets are not
             disjoint.
     """
 
-    def get_train_val_test_label_file_names() -> tuple[
-        set[str], set[str], set[str]
-    ]:
+    def get_train_val_test_label_file_names() -> (
+        tuple[set[str], set[str], set[str]]
+    ):
         """Get the label file names for train, first validation, second validation, and test sets.
 
         Returns:
@@ -662,7 +663,7 @@ def _convert_to_numpy_and_save(
         all_bezier_curves_data: list[npt.NDArray[np.float_]],
     ) -> npt.NDArray[np.float_]:
         """Pad the Bezier curves data with -1 so that all strokes have the same number of curves.
-        
+
         Args:
             all_bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays
                 containing Bezier curve information for each stroke. Each array has shape
@@ -671,7 +672,7 @@ def _convert_to_numpy_and_save(
 
         Returns:
             npt.NDArray[np.float_]: A 3D numpy array with shape
-                (number_of_strokes, max_number_of_curves, 10), where each row represents the Bezier 
+                (number_of_strokes, max_number_of_curves, 10), where each row represents the Bezier
                 curve information of a stroke, and each stroke is padded with -1 values to have the
                 same number of curves.
 
@@ -707,7 +708,7 @@ def _convert_to_numpy_and_save(
         Returns:
             tuple[npt.NDArray[np.float_], npt.NDArray[np.float_]]: A tuple containing the labels
                 and Bezier curves data as numpy arrays.
-            
+
         Raises:
             AssertionError: If the number of labels does not match the number of Bezier curves.
         """
@@ -750,7 +751,7 @@ def _convert_to_numpy_and_save(
 
 def extract_all_data() -> None:
     """Extract all data from the IAM On-Line Handwriting Database and save it to a numpy .npz file.
-    
+
     This function processes the data and saves it in the following format:
     - labels: a list of strings, where each string represents a line label from the database.
 
