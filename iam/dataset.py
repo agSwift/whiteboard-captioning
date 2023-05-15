@@ -7,7 +7,8 @@ from numpy.lib.npyio import NpzFile
 
 
 CHAR_TO_INDEX = {
-    char: index + 1 for index, char in enumerate(string.ascii_letters + string.digits + " ")
+    char: index + 1
+    for index, char in enumerate(string.ascii_letters + string.digits + " ")
 }
 
 
@@ -15,14 +16,16 @@ class StrokeBezierDataset(Dataset):
     """A PyTorch Dataset class for the bezier curve data and labels."""
 
     def __init__(
-        self, all_bezier_data: NpzFile, dataset_type: DatasetType,
+        self,
+        all_bezier_data: NpzFile,
+        dataset_type: DatasetType,
     ):
         """Initializes the StrokeBezierDataset class.
-        
+
         Args:
             stroke_bezier_data (NpzFile): All the extracted stroke data.
             dataset_type (DatasetType): The type of dataset to load.
-            
+
         Raises:
             ValueError: If the dataset type is invalid.
             ValueError: If the stroke data is invalid.
@@ -101,7 +104,7 @@ class StrokeBezierDataset(Dataset):
 
         Filters out from the label any characters that are not in CHAR_TO_INDEX before
         encoding.
-        
+
         Args:
             label (str): The input label string.
 
