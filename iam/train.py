@@ -15,16 +15,14 @@ import rnn
 
 wandb.login()
 
-INDEX_TO_CHAR = {
-    index: char for char, index in dataset.CHAR_TO_INDEX.items()
-}
-INDEX_TO_CHAR[0] = "*" # Epsilon character.
+INDEX_TO_CHAR = {index: char for char, index in dataset.CHAR_TO_INDEX.items()}
+INDEX_TO_CHAR[0] = "*"  # Epsilon character.
 
 # Hyperparameters.
 BATCH_SIZE = 64
 NUM_EPOCHS = 200
 HIDDEN_SIZE = 256
-NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1 # +1 for the epsilon character.
+NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
 NUM_LAYERS = 5
 DROPOUT_RATE = 0.3
 LEARNING_RATE = 3e-4
@@ -38,7 +36,9 @@ run = wandb.init(
     config={
         "learning_rate": LEARNING_RATE,
         "epochs": NUM_EPOCHS,
-    })
+    },
+)
+
 
 class ModelType(Enum):
     """An enum for the model types."""
@@ -47,8 +47,27 @@ class ModelType(Enum):
     LSTM = rnn.LSTM
     GRU = rnn.GRU
 
+
 class EarlyStopping:
-    def __init__(self, patience=7, min_delta=1e-3, restore_best_weight=True):
+    """Early stops the training if validation loss doesn't improve after a given patience."""
+
+    def __init__(
+        self,
+        patience: int = 7,
+        min_delta: float = 1e-3,
+        restore_best_weight: bool = True,
+    ):
+        """Initializes the EarlyStopping object.
+
+        Args:
+            patience (int, optional): The number of epochs to wait for the
+                validation loss to improve. Defaults to 7.
+            min_delta (float, optional): Minimum difference to consider an
+                update in the validation loss. Defaults to 1e-3.
+            restore_best_weight (bool, optional): Whether to restore model
+                weights from the epoch with the best value of the monitored
+                quantity. Defaults to True.
+        """
         self.patience = patience
         self.min_delta = min_delta
         self.restore_best_weight = restore_best_weight
@@ -57,34 +76,57 @@ class EarlyStopping:
         self.counter = 0
         self.status = ""
 
-    def __call__(self, model, val_loss):
+    def __call__(self, model: nn.Module, val_loss: float) -> bool:
+        """Call the EarlyStopping instance.
+
+        Args:
+            model (nn.Module): The model to evaluate.
+            val_loss (float): The current validation loss.
+
+        Returns:
+            bool: True if the model should be early stopped, False otherwise.
+        """
+        # Check if the best_loss has been set.
         if self.best_loss is None:
+            # Set the best_loss to the current validation loss and store the model.
             self.best_loss = val_loss
             self.best_model = copy.deepcopy(model)
+        # Check if the current validation loss is lower than the best loss by
+        # at least min_delta.
         elif self.best_loss - val_loss > self.min_delta:
+            # Update the best loss and reset the counter.
             self.best_loss = val_loss
             self.counter = 0
             self.best_model.load_state_dict(model.state_dict())
+        # Check if the current validation loss is not lower than the best loss
+        # by at least min_delta.
         elif self.best_loss - val_loss < self.min_delta:
             self.counter += 1
+            # If the counter is greater than or equal to patience, then stop training.
             if self.counter >= self.patience:
                 self.status = f"Early stopped on {self.counter}"
+                # If restore_best_weight is True, restore the model weights from the
+                # epoch with the best validation loss
                 if self.restore_best_weight:
                     model.load_state_dict(self.best_model.state_dict())
                 return True
+
+        # Update the status.
         self.status = f"{self.counter}/{self.patience}"
         print(f"Early Stopping Status: {self.status}")
         return False
 
 
-def _extract_load_datasets() -> tuple[
-    dataset.StrokeBezierDataset,
-    dataset.StrokeBezierDataset,
-    dataset.StrokeBezierDataset,
-    dataset.StrokeBezierDataset,
-]:
+def _extract_load_datasets() -> (
+    tuple[
+        dataset.StrokeBezierDataset,
+        dataset.StrokeBezierDataset,
+        dataset.StrokeBezierDataset,
+        dataset.StrokeBezierDataset,
+    ]
+):
     """Extracts and loads the data from the IAM dataset.
-    
+
     Returns:
         tuple[dataset.StrokeBezierDataset, dataset.StrokeBezierDataset, dataset.StrokeBezierDataset,
         dataset.StrokeBezierDataset]:
@@ -118,13 +160,13 @@ def _create_data_loaders(
     test_dataset: dataset.StrokeBezierDataset,
 ) -> tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Creates the data loaders for the given datasets.
-    
+
     Args:
         train_dataset (dataset.StrokeBezierDataset): The training dataset.
         val_1_dataset (dataset.StrokeBezierDataset): The first validation dataset.
         val_2_dataset (dataset.StrokeBezierDataset): The second validation dataset.
         test_dataset (dataset.StrokeBezierDataset): The test dataset.
-        
+
     Returns:
         tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
             The training, validation, and test data loaders.
@@ -152,13 +194,13 @@ def _train_epoch(
     train_loader: DataLoader,
 ) -> float:
     """Trains the model for one epoch.
-    
+
     Args:
         model (nn.Module): The model to train.
         criterion (nn.CTCLoss): The CTC loss function.
         optimizer (optim.Optimizer): The optimizer to use.
         train_loader (DataLoader): The training data loader.
-        
+
     Returns:
         float: The average training loss.
     """
@@ -196,7 +238,9 @@ def _train_epoch(
         # Calculate target_lengths for the current batch.
         labels_no_padding = [label[label != -1] for label in labels]
         target_lengths = torch.tensor(
-            [len(label) for label in labels_no_padding], dtype=torch.int32, device=DEVICE,
+            [len(label) for label in labels_no_padding],
+            dtype=torch.int32,
+            device=DEVICE,
         )
 
         # Calculate the CTC loss.
@@ -217,12 +261,12 @@ def _validate_epoch(
     *, model: nn.Module, criterion: nn.CTCLoss, val_loader: DataLoader
 ) -> tuple[float, float, float]:
     """Validates the model for one epoch on the given validation dataset.
-    
+
     Args:
         model (nn.Module): The model to validate.
         criterion (nn.CTCLoss): The CTC loss function.
         val_loader (DataLoader): The validation data loader.
-        
+
     Returns:
         tuple[float, float, float]: The average validation loss, CER, and WER for the epoch.
     """
@@ -263,19 +307,37 @@ def _validate_epoch(
             labels_no_padding = [label[label != -1] for label in labels]
             predictions = logits.argmax(2).detach().cpu().numpy().T
             predictions = [
-                "".join([INDEX_TO_CHAR[index] for index in prediction if index != 0])
+                "".join(
+                    [
+                        INDEX_TO_CHAR[index]
+                        for index in prediction
+                        if index != 0
+                    ]
+                )
                 for prediction in predictions
             ]
             labels_to_chars = [
-                "".join([INDEX_TO_CHAR[index] for index in label.detach().cpu().numpy()])
+                "".join(
+                    [
+                        INDEX_TO_CHAR[index]
+                        for index in label.detach().cpu().numpy()
+                    ]
+                )
                 for label in labels_no_padding
             ]
             total_samples += len(labels_to_chars)
 
-            for i, (label, prediction) in enumerate(zip(labels_to_chars, predictions)):
+            for i, (label, prediction) in enumerate(
+                zip(labels_to_chars, predictions)
+            ):
                 char_error_rate = cer(label, prediction)
                 word_error_rate = wer(label, prediction)
-                wandb.log({"Validation - CER": char_error_rate, "Validation - WER": word_error_rate})
+                wandb.log(
+                    {
+                        "Validation - CER": char_error_rate,
+                        "Validation - WER": word_error_rate,
+                    }
+                )
 
                 total_cer += char_error_rate
                 total_wer += word_error_rate
@@ -288,7 +350,9 @@ def _validate_epoch(
                     print()
 
             target_lengths = torch.tensor(
-                [len(label) for label in labels_no_padding], dtype=torch.int32, device=DEVICE,
+                [len(label) for label in labels_no_padding],
+                dtype=torch.int32,
+                device=DEVICE,
             )
 
             # Calculate the CTC loss.
@@ -304,15 +368,18 @@ def _validate_epoch(
 
 
 def _test_model(
-    *, model: nn.Module, criterion: nn.CTCLoss, test_loader: DataLoader,
+    *,
+    model: nn.Module,
+    criterion: nn.CTCLoss,
+    test_loader: DataLoader,
 ) -> tuple[float, float, float]:
     """Tests the model on the given test dataset.
-    
+
     Args:
         model (nn.Module): The model to test.
         criterion (nn.CTCLoss): The CTC loss function.
         test_loader (DataLoader): The test data loader.
-        
+
     Returns:
         tuple[float, float, float]: The average test loss, CER, and WER.
     """
@@ -353,15 +420,28 @@ def _test_model(
             # Calculate target_lengths for the current batch.
             labels_no_padding = [label[label != -1] for label in labels]
             target_lengths = torch.tensor(
-                [len(label) for label in labels_no_padding], dtype=torch.int32, device=DEVICE,
+                [len(label) for label in labels_no_padding],
+                dtype=torch.int32,
+                device=DEVICE,
             )
             predictions = logits.argmax(2).detach().cpu().numpy().T
             predictions = [
-                "".join([INDEX_TO_CHAR[index] for index in prediction if index != 0])
+                "".join(
+                    [
+                        INDEX_TO_CHAR[index]
+                        for index in prediction
+                        if index != 0
+                    ]
+                )
                 for prediction in predictions
             ]
             labels_to_chars = [
-                "".join([INDEX_TO_CHAR[index] for index in label.detach().cpu().numpy()])
+                "".join(
+                    [
+                        INDEX_TO_CHAR[index]
+                        for index in label.detach().cpu().numpy()
+                    ]
+                )
                 for label in labels_no_padding
             ]
             total_samples += len(labels_to_chars)
@@ -369,7 +449,12 @@ def _test_model(
             for label, prediction in zip(labels_to_chars, predictions):
                 char_error_rate = cer(label, prediction)
                 word_error_rate = wer(label, prediction)
-                wandb.log({"Test - CER": char_error_rate, "Test - WER": word_error_rate})
+                wandb.log(
+                    {
+                        "Test - CER": char_error_rate,
+                        "Test - WER": word_error_rate,
+                    }
+                )
 
                 total_cer += char_error_rate
                 total_wer += word_error_rate
@@ -387,9 +472,11 @@ def _test_model(
     return avg_test_loss, avg_cer, avg_wer
 
 
-def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[float], list[float], list[float]]:
+def train_model(
+    model_type: ModelType,
+) -> tuple[nn.Module, list[float], list[float], list[float], list[float]]:
     """Train and evaluate the given model on the training, validation and test datasets.
-    
+
     Args:
         model_type (ModelType): The type of model to train.
 
@@ -454,17 +541,27 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
 
         # Validate the model on the validation datasets.
         val_1_loss, val_1_cer, val_1_wer = _validate_epoch(
-            model=model, criterion=criterion, val_loader=val_1_loader,
+            model=model,
+            criterion=criterion,
+            val_loader=val_1_loader,
         )
         val_2_loss, val_2_cer, val_2_wer = _validate_epoch(
-            model=model, criterion=criterion, val_loader=val_2_loader,
+            model=model,
+            criterion=criterion,
+            val_loader=val_2_loader,
         )
 
         # Calculate the average validation loss, CER and WER.
         avg_val_loss = (val_1_loss + val_2_loss) / 2
         avg_val_cer = (val_1_cer + val_2_cer) / 2
         avg_val_wer = (val_1_wer + val_2_wer) / 2
-        wandb.log({"Validation Per Epoch - Loss": avg_val_loss, "Validation Per Epoch - CER": avg_val_cer, "Validation Per Epoch - WER": avg_val_wer})
+        wandb.log(
+            {
+                "Validation Per Epoch - Loss": avg_val_loss,
+                "Validation Per Epoch - CER": avg_val_cer,
+                "Validation Per Epoch - WER": avg_val_wer,
+            }
+        )
 
         print(
             f"Epoch {epoch + 1}/{NUM_EPOCHS}, "
@@ -480,9 +577,13 @@ def train_model(model_type: ModelType) -> tuple[nn.Module, list[float], list[flo
 
     # Evaluate the model on the test dataset.
     test_loss, test_cer, test_wer = _test_model(
-        model=model, criterion=criterion, test_loader=test_loader,
+        model=model,
+        criterion=criterion,
+        test_loader=test_loader,
     )
-    print(f"Test Loss: {test_loss:.4f}, Test CER: {test_cer:.4f}, Test WER: {test_wer:.4f}")
+    print(
+        f"Test Loss: {test_loss:.4f}, Test CER: {test_cer:.4f}, Test WER: {test_wer:.4f}"
+    )
 
     # Create a models directory if it doesn't exist.
     Path("models").mkdir(parents=True, exist_ok=True)
@@ -499,13 +600,7 @@ if __name__ == "__main__":
     if not extraction.EXTRACTED_DATA_PATH.exists():
         extraction.extract_all_data()
 
-    (
-        model,
-        train_losses,
-        val_losses,
-        val_cers,
-        val_wers
-    ) = train_model(model_type=ModelType.RNN)
+    train_model(model_type=ModelType.RNN)
 
     # (
     #     lstm_model,
@@ -514,7 +609,3 @@ if __name__ == "__main__":
     #     lstm_val_cers,
     #     lstm_val_wers
     # ) = train_model(model_type=ModelType.LSTM)
-
-    
-    
-
