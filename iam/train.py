@@ -357,13 +357,18 @@ def _validate_epoch(
             ]
             total_samples += len(labels_to_chars)
 
-            greedy_predictions = [
-                _greedy_decode(prediction)
-                for prediction in logits.argmax(2).detach().cpu().numpy().T
+            # greedy_decodings = [
+            #     _greedy_decode(prediction)
+            #     for prediction in logits.argmax(2).detach().cpu().numpy().T
+            # ]
+
+            beam_search_decodings = [
+                DECODER.decode(prediction)
+                for prediction in logits.detach().cpu().numpy()
             ]
 
             for i, (label, prediction) in enumerate(
-                zip(labels_to_chars, greedy_predictions)
+                zip(labels_to_chars, beam_search_decodings)
             ):
                 char_error_rate = cer(label, prediction)
                 word_error_rate = wer(label, prediction)
@@ -471,12 +476,19 @@ def _test_model(
             ]
             total_samples += len(labels_to_chars)
 
-            greedy_predictions = [
-                _greedy_decode(prediction)
-                for prediction in logits.argmax(2).detach().cpu().numpy().T
+            # greedy_decodings = [
+            #     _greedy_decode(prediction)
+            #     for prediction in logits.argmax(2).detach().cpu().numpy().T
+            # ]
+
+            beam_search_decodings = [
+                DECODER.decode(prediction)
+                for prediction in logits.detach().cpu().numpy()
             ]
 
-            for label, prediction in zip(labels_to_chars, greedy_predictions):
+            for label, prediction in zip(
+                labels_to_chars, beam_search_decodings
+            ):
                 char_error_rate = cer(label, prediction)
                 word_error_rate = wer(label, prediction)
                 wandb.log(
