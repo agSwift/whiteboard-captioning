@@ -8,6 +8,7 @@ from pyctcdecode import build_ctcdecoder
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+
 from jiwer import cer, wer
 import wandb
 
@@ -29,7 +30,7 @@ NUM_LAYERS = 5
 DROPOUT_RATE = 0.3
 LEARNING_RATE = 3e-4
 PATIENCE = 20
-BEAM_WIDTH = 5
+BEAM_WIDTH = 75
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 DECODER = build_ctcdecoder(
@@ -49,6 +50,7 @@ run = wandb.init(
         "num_layers": NUM_LAYERS,
         "dropout_rate": DROPOUT_RATE,
         "patience": PATIENCE,
+        "beam_width": BEAM_WIDTH,
     },
 )
 
@@ -387,9 +389,10 @@ def _validate_epoch(
 
             # Get the beam search decodings for the current batch.
             beam_predictions = logits.detach().cpu().numpy()
-            beam_decodings = DECODER.decode_batch(
-                pool=None, logits_list=beam_predictions, beam_width=BEAM_WIDTH
-            )
+            beam_decodings = [
+                DECODER.decode(prediction, BEAM_WIDTH)
+                for prediction in beam_predictions
+            ]
 
             # Calculate the CERs and WERs for the current batch.
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
@@ -428,6 +431,7 @@ def _validate_epoch(
                     print(f"Beam Decoding Prediction: {beam_decoding}")
                     print(f"Beam Decoding CER: {beam_cer:.4f}")
                     print(f"Beam Decoding WER: {beam_wer:.4f}")
+                    print()
                     print()
 
     # Return the average validation loss, CERs, and WERs.
@@ -529,9 +533,10 @@ def _test_model(
 
             # Get the beam search decodings for the current batch.
             beam_predictions = logits.detach().cpu().numpy()
-            beam_decodings = DECODER.decode_batch(
-                pool=None, logits_list=beam_predictions, beam_width=BEAM_WIDTH
-            )
+            beam_decodings = [
+                DECODER.decode(prediction, BEAM_WIDTH)
+                for prediction in beam_predictions
+            ]
 
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
                 zip(labels_to_strings, greedy_decodings, beam_decodings)
@@ -569,6 +574,7 @@ def _test_model(
                     print(f"Beam Decoding Prediction: {beam_decoding}")
                     print(f"Beam Decoding CER: {beam_cer:.4f}")
                     print(f"Beam Decoding WER: {beam_wer:.4f}")
+                    print()
                     print()
 
     # Return the average test loss, CERs, and WERs.
@@ -634,7 +640,7 @@ def train_model(
     early_stopping = EarlyStopping(patience=PATIENCE)
 
     # Set up the loss function and optimizer.
-    criterion = nn.CTCLoss(blank=0, zero_infinity=True, reduction="mean")
+    criterion = nn.CTCLoss(blank=0, reduction="mean", zero_infinity=True)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     # Start the training loop.
