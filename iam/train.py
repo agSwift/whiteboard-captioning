@@ -29,6 +29,7 @@ NUM_LAYERS = 5
 DROPOUT_RATE = 0.3
 LEARNING_RATE = 3e-4
 PATIENCE = 20
+BEAM_WIDTH = 5
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 DECODER = build_ctcdecoder(
@@ -65,6 +66,7 @@ class EarlyStopping:
 
     def __init__(
         self,
+        *,
         patience: int = 7,
         min_delta: float = 1e-3,
         restore_best_weight: bool = True,
@@ -378,23 +380,16 @@ def _validate_epoch(
             val_loss += loss.item()
 
             # Get the greedy search decodings for the current batch.
-            greedy_predictions = (
-                torch.nn.functional.log_softmax(logits, dim=-1)
-                .argmax(2)
-                .detach()
-                .cpu()
-                .numpy()
-                .T
-            )
+            greedy_predictions = logits.argmax(2).detach().cpu().numpy().T
             greedy_decodings = [
                 _greedy_decode(prediction) for prediction in greedy_predictions
             ]
 
             # Get the beam search decodings for the current batch.
-            bream_predictions = logits.detach().cpu().numpy()
-            beam_decodings = [
-                DECODER.decode(prediction) for prediction in bream_predictions
-            ]
+            beam_predictions = logits.detach().cpu().numpy()
+            beam_decodings = DECODER.decode_batch(
+                pool=None, logits_list=beam_predictions, beam_width=BEAM_WIDTH
+            )
 
             # Calculate the CERs and WERs for the current batch.
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
@@ -527,23 +522,16 @@ def _test_model(
             num_samples += len(labels_to_strings)
 
             # Get the greedy search decodings for the current batch.
-            greedy_predictions = (
-                torch.nn.functional.log_softmax(logits, dim=-1)
-                .argmax(2)
-                .detach()
-                .cpu()
-                .numpy()
-                .T
-            )
+            greedy_predictions = logits.argmax(2).detach().cpu().numpy().T
             greedy_decodings = [
                 _greedy_decode(prediction) for prediction in greedy_predictions
             ]
 
             # Get the beam search decodings for the current batch.
-            bream_predictions = logits.detach().cpu().numpy()
-            beam_decodings = [
-                DECODER.decode(prediction) for prediction in bream_predictions
-            ]
+            beam_predictions = logits.detach().cpu().numpy()
+            beam_decodings = DECODER.decode_batch(
+                pool=None, logits_list=beam_predictions, beam_width=BEAM_WIDTH
+            )
 
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
                 zip(labels_to_strings, greedy_decodings, beam_decodings)
