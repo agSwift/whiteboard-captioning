@@ -77,9 +77,7 @@ class BaseModel(nn.Module):
         out = self.fc(
             out
         )  # Apply the fully connected layer to all time steps.
-        out = torch.nn.functional.log_softmax(
-            out, dim=-1
-        )  # Apply log_softmax to the output.
+
         return out
 
 

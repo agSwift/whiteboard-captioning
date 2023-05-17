@@ -18,7 +18,7 @@ import rnn
 wandb.login()
 
 INDEX_TO_CHAR = {index: char for char, index in dataset.CHAR_TO_INDEX.items()}
-INDEX_TO_CHAR[0] = "_"  # Epsilon character for the CTC loss.
+INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 
 # Hyperparameters.
 BATCH_SIZE = 64
@@ -31,8 +31,9 @@ LEARNING_RATE = 3e-4
 PATIENCE = 20
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-DECODER = build_ctcdecoder([INDEX_TO_CHAR.get(i) for i in range(NUM_CLASSES)])
-
+DECODER = build_ctcdecoder(
+    labels=[INDEX_TO_CHAR.get(i) for i in range(1, NUM_CLASSES)],
+)
 
 # Initialize the W&B run.
 run = wandb.init(
@@ -42,6 +43,11 @@ run = wandb.init(
     config={
         "learning_rate": LEARNING_RATE,
         "epochs": NUM_EPOCHS,
+        "batch_size": BATCH_SIZE,
+        "hidden_size": HIDDEN_SIZE,
+        "num_layers": NUM_LAYERS,
+        "dropout_rate": DROPOUT_RATE,
+        "patience": PATIENCE,
     },
 )
 
@@ -265,10 +271,9 @@ def _train_epoch(
 
         # Perform a forward pass through the model.
         logits = model(bezier_curves)
-        # Create input_lengths tensor for the CTC loss function.
-        actual_batch_size = bezier_curves.size(1)
 
-        # Create input_lengths tensor for the CTC loss function.
+        # Create an input_lengths tensor for the CTC loss function.
+        actual_batch_size = bezier_curves.size(1)
         input_lengths = torch.full(
             size=(actual_batch_size,),
             fill_value=logits.size(0),
@@ -284,14 +289,12 @@ def _train_epoch(
             device=DEVICE,
         )
 
-        # Calculate the CTC loss.
+        # Calculate the CTC loss and perform backpropagation.
         loss = criterion(logits, labels, input_lengths, target_lengths)
-        # Perform backpropagation.
         loss.backward()
 
-        # Update the model parameters.
+        # Update the model parameters and accumulate the training loss.
         optimizer.step()
-        # Accumulate the training loss.
         train_loss += loss.item()
 
     # Calculate the average training loss.
@@ -300,7 +303,7 @@ def _train_epoch(
 
 def _validate_epoch(
     *, model: nn.Module, criterion: nn.CTCLoss, val_loader: DataLoader
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, float, float]:
     """Validates the model for one epoch on the given validation dataset.
 
     Args:
@@ -309,15 +312,21 @@ def _validate_epoch(
         val_loader (DataLoader): The validation data loader.
 
     Returns:
-        tuple[float, float, float]: The average validation loss, CER, and WER for the epoch.
+        tuple[float, float, float, float, float]:
+            The average validation loss, the average beam search CER,
+            the average beam search WER, the average greedy search CER,
+            and the average greedy search WER.
     """
     # Set the model to evaluation mode.
     model.eval()
 
     val_loss = 0.0
-    total_cer = 0.0
-    total_wer = 0.0
-    total_samples = 0
+    num_samples = 0
+
+    beam_total_cer = 0.0
+    beam_total_wer = 0.0
+    greedy_total_cer = 0.0
+    greedy_total_wer = 0.0
 
     # Evaluate the model on the validation dataset.
     with torch.no_grad():
@@ -335,8 +344,8 @@ def _validate_epoch(
             # Perform a forward pass through the model.
             logits = model(bezier_curves)
 
+            # Create an input_lengths tensor for the CTC loss function.
             actual_batch_size = bezier_curves.size(1)
-            # Create input_lengths tensor for the CTC loss function.
             input_lengths = torch.full(
                 size=(actual_batch_size,),
                 fill_value=logits.size(0),
@@ -346,7 +355,14 @@ def _validate_epoch(
 
             # Calculate target_lengths for the current batch.
             labels_no_padding = [label[label != -1] for label in labels]
-            labels_to_chars = [
+            target_lengths = torch.tensor(
+                [len(label) for label in labels_no_padding],
+                dtype=torch.int32,
+                device=DEVICE,
+            )
+
+            # Convert the labels to strings for the CER and WER calculations.
+            labels_to_strings = [
                 "".join(
                     [
                         INDEX_TO_CHAR[index]
@@ -355,56 +371,78 @@ def _validate_epoch(
                 )
                 for label in labels_no_padding
             ]
-            total_samples += len(labels_to_chars)
+            num_samples += len(labels_to_strings)
 
-            # greedy_decodings = [
-            #     _greedy_decode(prediction)
-            #     for prediction in logits.argmax(2).detach().cpu().numpy().T
-            # ]
+            # Calculate the CTC loss and accumulate the validation loss.
+            loss = criterion(logits, labels, input_lengths, target_lengths)
+            val_loss += loss.item()
 
-            beam_search_decodings = [
-                DECODER.decode(prediction)
-                for prediction in logits.detach().cpu().numpy()
+            # Get the greedy search decodings for the current batch.
+            greedy_predictions = (
+                torch.nn.functional.log_softmax(logits, dim=-1)
+                .argmax(2)
+                .detach()
+                .cpu()
+                .numpy()
+                .T
+            )
+            greedy_decodings = [
+                _greedy_decode(prediction) for prediction in greedy_predictions
             ]
 
-            for i, (label, prediction) in enumerate(
-                zip(labels_to_chars, beam_search_decodings)
+            # Get the beam search decodings for the current batch.
+            bream_predictions = logits.detach().cpu().numpy()
+            beam_decodings = [
+                DECODER.decode(prediction) for prediction in bream_predictions
+            ]
+
+            # Calculate the CERs and WERs for the current batch.
+            for i, (label, greedy_decoding, beam_decoding) in enumerate(
+                zip(labels_to_strings, greedy_decodings, beam_decodings)
             ):
-                char_error_rate = cer(label, prediction)
-                word_error_rate = wer(label, prediction)
+                # Calculate the CERs and WERs for the current sample.
+                greedy_cer = cer(label, greedy_decoding)
+                greedy_wer = wer(label, greedy_decoding)
+                beam_cer = cer(label, beam_decoding)
+                beam_wer = wer(label, beam_decoding)
+
+                # Log the CERs and WERs to Weights & Biases.
                 wandb.log(
                     {
-                        "Validation - CER": char_error_rate,
-                        "Validation - WER": word_error_rate,
+                        "Validation - Greedy Decoding CER": greedy_cer,
+                        "Validation - Greedy Decoding WER": greedy_wer,
+                        "Validation - Beam Decoding CER": beam_cer,
+                        "Validation - Beam Decoding WER": beam_wer,
                     }
                 )
 
-                total_cer += char_error_rate
-                total_wer += word_error_rate
+                # Accumulate the CERs and WERs.
+                beam_total_cer += beam_cer
+                beam_total_wer += beam_wer
+                greedy_total_cer += greedy_cer
+                greedy_total_wer += greedy_wer
 
+                # Print the first sample in the batch.
                 if i == 0:
                     print(f"Label: {label}")
-                    print(f"Prediction: {prediction}")
-                    print(f"CER: {char_error_rate:.4f}")
-                    print(f"WER: {word_error_rate:.4f}")
+                    print("-" * 50)
+                    print(f"Greedy Decoding Prediction: {greedy_decoding}")
+                    print(f"Greedy Decoding CER: {greedy_cer:.4f}")
+                    print(f"Greedy Decoding WER: {greedy_wer:.4f}")
+                    print("-" * 50)
+                    print(f"Beam Decoding Prediction: {beam_decoding}")
+                    print(f"Beam Decoding CER: {beam_cer:.4f}")
+                    print(f"Beam Decoding WER: {beam_wer:.4f}")
                     print()
 
-            target_lengths = torch.tensor(
-                [len(label) for label in labels_no_padding],
-                dtype=torch.int32,
-                device=DEVICE,
-            )
-
-            # Calculate the CTC loss.
-            loss = criterion(logits, labels, input_lengths, target_lengths)
-            # Accumulate the validation loss.
-            val_loss += loss.item()
-
-    avg_val_loss = val_loss / total_samples
-    avg_cer = total_cer / total_samples
-    avg_wer = total_wer / total_samples
-
-    return avg_val_loss, avg_cer, avg_wer
+    # Return the average validation loss, CERs, and WERs.
+    return (
+        val_loss / num_samples,
+        beam_total_cer / num_samples,
+        beam_total_wer / num_samples,
+        greedy_total_cer / num_samples,
+        greedy_total_wer / num_samples,
+    )
 
 
 def _test_model(
@@ -412,7 +450,7 @@ def _test_model(
     model: nn.Module,
     criterion: nn.CTCLoss,
     test_loader: DataLoader,
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, float, float]:
     """Tests the model on the given test dataset.
 
     Args:
@@ -421,15 +459,21 @@ def _test_model(
         test_loader (DataLoader): The test data loader.
 
     Returns:
-        tuple[float, float, float]: The average test loss, CER, and WER.
+        tuple[float, float, float, float, float]:
+            The average test loss, the average beam search CER,
+            the average beam search WER, the average greedy search CER,
+            and the average greedy search WER.
     """
     # Set the model to evaluation mode.
     model.eval()
 
     test_loss = 0.0
-    total_cer = 0.0
-    total_wer = 0.0
-    total_samples = 0
+    num_samples = 0
+
+    beam_total_cer = 0.0
+    beam_total_wer = 0.0
+    greedy_total_cer = 0.0
+    greedy_total_wer = 0.0
 
     # Evaluate the model on the test dataset.
     with torch.no_grad():
@@ -448,7 +492,7 @@ def _test_model(
             # Perform a forward pass through the model.
             logits = model(bezier_curves)
 
-            # Create input_lengths tensor for the CTC loss function.
+            # Create an input_lengths tensor for the CTC loss function.
             actual_batch_size = bezier_curves.size(1)
             input_lengths = torch.full(
                 size=(actual_batch_size,),
@@ -465,7 +509,13 @@ def _test_model(
                 device=DEVICE,
             )
 
-            labels_to_chars = [
+            # Calculate the CTC loss and accumulate the test loss.
+            loss = criterion(logits, labels, input_lengths, target_lengths)
+            test_loss += loss.item()
+            wandb.log({"Test - Loss": loss.item()})
+
+            # Convert the labels to strings for the CER and WER calculations.
+            labels_to_strings = [
                 "".join(
                     [
                         INDEX_TO_CHAR[index]
@@ -474,44 +524,73 @@ def _test_model(
                 )
                 for label in labels_no_padding
             ]
-            total_samples += len(labels_to_chars)
+            num_samples += len(labels_to_strings)
 
-            # greedy_decodings = [
-            #     _greedy_decode(prediction)
-            #     for prediction in logits.argmax(2).detach().cpu().numpy().T
-            # ]
-
-            beam_search_decodings = [
-                DECODER.decode(prediction)
-                for prediction in logits.detach().cpu().numpy()
+            # Get the greedy search decodings for the current batch.
+            greedy_predictions = (
+                torch.nn.functional.log_softmax(logits, dim=-1)
+                .argmax(2)
+                .detach()
+                .cpu()
+                .numpy()
+                .T
+            )
+            greedy_decodings = [
+                _greedy_decode(prediction) for prediction in greedy_predictions
             ]
 
-            for label, prediction in zip(
-                labels_to_chars, beam_search_decodings
+            # Get the beam search decodings for the current batch.
+            bream_predictions = logits.detach().cpu().numpy()
+            beam_decodings = [
+                DECODER.decode(prediction) for prediction in bream_predictions
+            ]
+
+            for i, (label, greedy_decoding, beam_decoding) in enumerate(
+                zip(labels_to_strings, greedy_decodings, beam_decodings)
             ):
-                char_error_rate = cer(label, prediction)
-                word_error_rate = wer(label, prediction)
+                # Calculate the CERs and WERs for the current sample.
+                greedy_cer = cer(label, greedy_decoding)
+                greedy_wer = wer(label, greedy_decoding)
+                beam_cer = cer(label, beam_decoding)
+                beam_wer = wer(label, beam_decoding)
+
+                # Log the CERs and WERs to Weights & Biases.
                 wandb.log(
                     {
-                        "Test - CER": char_error_rate,
-                        "Test - WER": word_error_rate,
+                        "Test - Greedy Decoding CER": greedy_cer,
+                        "Test - Greedy Decoding WER": greedy_wer,
+                        "Test - Beam Decoding CER": beam_cer,
+                        "Test - Beam Decoding WER": beam_wer,
                     }
                 )
 
-                total_cer += char_error_rate
-                total_wer += word_error_rate
+                # Accumulate the CERs and WERs.
+                beam_total_cer += beam_cer
+                beam_total_wer += beam_wer
+                greedy_total_cer += greedy_cer
+                greedy_total_wer += greedy_wer
 
-            # Calculate the CTC loss.
-            loss = criterion(logits, labels, input_lengths, target_lengths)
-            # Accumulate the test loss.
-            test_loss += loss.item()
-            wandb.log({"Test - Loss": loss.item()})
+                # Print the first sample in the batch.
+                if i == 0:
+                    print(f"Label: {label}")
+                    print("-" * 50)
+                    print(f"Greedy Decoding Prediction: {greedy_decoding}")
+                    print(f"Greedy Decoding CER: {greedy_cer:.4f}")
+                    print(f"Greedy Decoding WER: {greedy_wer:.4f}")
+                    print("-" * 50)
+                    print(f"Beam Decoding Prediction: {beam_decoding}")
+                    print(f"Beam Decoding CER: {beam_cer:.4f}")
+                    print(f"Beam Decoding WER: {beam_wer:.4f}")
+                    print()
 
-    avg_test_loss = test_loss / total_samples
-    avg_cer = total_cer / total_samples
-    avg_wer = total_wer / total_samples
-
-    return avg_test_loss, avg_cer, avg_wer
+    # Return the average test loss, CERs, and WERs.
+    return (
+        test_loss / num_samples,
+        beam_total_cer / num_samples,
+        beam_total_wer / num_samples,
+        greedy_total_cer / num_samples,
+        greedy_total_wer / num_samples,
+    )
 
 
 def train_model(
@@ -540,7 +619,6 @@ def train_model(
         f"Test Dataset Size: {len(test_dataset)}\n"
     )
 
-    # Create data loaders for the datasets.
     (
         train_loader,
         val_1_loader,
@@ -553,8 +631,8 @@ def train_model(
         test_dataset=test_dataset,
     )
 
+    # Create the model.
     bezier_curve_dimension = train_dataset.all_bezier_curves[0].shape[-1]
-
     model = model_type.value(
         bezier_curve_dimension=bezier_curve_dimension,
         hidden_size=HIDDEN_SIZE,
@@ -564,6 +642,7 @@ def train_model(
         device=DEVICE,
     ).to(DEVICE)
 
+    # Set up the early stopping callback.
     early_stopping = EarlyStopping(patience=PATIENCE)
 
     # Set up the loss function and optimizer.
@@ -582,49 +661,81 @@ def train_model(
         wandb.log({"Training - Loss": train_loss})
 
         # Validate the model on the validation datasets.
-        val_1_loss, val_1_cer, val_1_wer = _validate_epoch(
+        (
+            val_1_loss,
+            val_1_beam_cer,
+            val_1_beam_wer,
+            val_1_greedy_cer,
+            val_1_greedy_wer,
+        ) = _validate_epoch(
             model=model,
             criterion=criterion,
             val_loader=val_1_loader,
         )
-        val_2_loss, val_2_cer, val_2_wer = _validate_epoch(
+
+        (
+            val_2_loss,
+            val_2_beam_cer,
+            val_2_beam_wer,
+            val_2_greedy_cer,
+            val_2_greedy_wer,
+        ) = _validate_epoch(
             model=model,
             criterion=criterion,
             val_loader=val_2_loader,
         )
 
         # Calculate the average validation loss, CER and WER.
-        avg_val_loss = (val_1_loss + val_2_loss) / 2
-        avg_val_cer = (val_1_cer + val_2_cer) / 2
-        avg_val_wer = (val_1_wer + val_2_wer) / 2
+        avg_epoch_val_loss = (val_1_loss + val_2_loss) / 2
+        avg_epoch_val_beam_cer = (val_1_beam_cer + val_2_beam_cer) / 2
+        avg_epoch_val_beam_wer = (val_1_beam_wer + val_2_beam_wer) / 2
+        avg_epoch_val_greedy_cer = (val_1_greedy_cer + val_2_greedy_cer) / 2
+        avg_epoch_val_greedy_wer = (val_1_greedy_wer + val_2_greedy_wer) / 2
+
+        # Log the average validation loss, CERs, and WERs to Weights & Biases.
         wandb.log(
             {
-                "Validation - Loss Per Epoch": avg_val_loss,
-                "Validation - CER Per Epoch": avg_val_cer,
-                "Validation - WER Per Epoch": avg_val_wer,
+                "Validation - Loss - Per Epoch Average": avg_epoch_val_loss,
+                "Validation - Beam Decoding CER - Per Epoch Average": avg_epoch_val_beam_cer,
+                "Validation - Beam Decoding WER - Per Epoch Average": avg_epoch_val_beam_wer,
+                "Validation - Greedy Decoding CER - Per Epoch Average": avg_epoch_val_greedy_cer,
+                "Validation - Greedy Decoding WER - Per Epoch Average": avg_epoch_val_greedy_wer,
             }
         )
 
         print(
             f"Epoch {epoch + 1}/{NUM_EPOCHS}, "
             f"Train Loss: {train_loss:.4f}, "
-            f"Val Loss: {avg_val_loss:.4f}, "
-            f"Val CER: {avg_val_cer:.4f}, "
-            f"Val WER: {avg_val_wer:.4f}, "
+            f"Val Loss: {avg_epoch_val_loss:.4f}, "
+            f"Val Beam CER: {avg_epoch_val_beam_cer:.4f}, "
+            f"Val Beam WER: {avg_epoch_val_beam_wer:.4f}, "
+            f"Val Greedy CER: {avg_epoch_val_greedy_cer:.4f}, "
+            f"Val Greedy WER: {avg_epoch_val_greedy_wer:.4f}"
         )
 
-        if early_stopping(model, avg_val_loss):
-            print("Early stopping")
+        if early_stopping(model, avg_epoch_val_loss):
+            print("Early stopping...")
             break
 
-    # Evaluate the model on the test dataset.
-    test_loss, test_cer, test_wer = _test_model(
+    # Training is complete, evaluate the model on the test dataset.
+    (
+        test_loss,
+        test_beam_cer,
+        test_beam_wer,
+        test_greedy_cer,
+        test_greedy_wer,
+    ) = _test_model(
         model=model,
         criterion=criterion,
         test_loader=test_loader,
     )
+
     print(
-        f"Test Loss: {test_loss:.4f}, Test CER: {test_cer:.4f}, Test WER: {test_wer:.4f}"
+        f"Test Loss: {test_loss:.4f}, "
+        f"Test Beam CER: {test_beam_cer:.4f}, "
+        f"Test Beam WER: {test_beam_wer:.4f}, "
+        f"Test Greedy CER: {test_greedy_cer:.4f}, "
+        f"Test Greedy WER: {test_greedy_wer:.4f}"
     )
 
     # Create a models directory if it doesn't exist.

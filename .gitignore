@@ -1,5 +1,6 @@
 datasets
 .pytest_cache
+.vscode/
 __pycache__/
 wandb/
 .DS_Store
