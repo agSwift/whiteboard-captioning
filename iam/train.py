@@ -2,7 +2,9 @@ import copy
 from enum import Enum
 from pathlib import Path
 import numpy as np
+import numpy.typing as npt
 
+from pyctcdecode import build_ctcdecoder
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
@@ -16,7 +18,7 @@ import rnn
 wandb.login()
 
 INDEX_TO_CHAR = {index: char for char, index in dataset.CHAR_TO_INDEX.items()}
-INDEX_TO_CHAR[0] = "*"  # Epsilon character for the CTC loss.
+INDEX_TO_CHAR[0] = "_"  # Epsilon character for the CTC loss.
 
 # Hyperparameters.
 BATCH_SIZE = 64
@@ -29,6 +31,10 @@ LEARNING_RATE = 3e-4
 PATIENCE = 20
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+DECODER = build_ctcdecoder([INDEX_TO_CHAR.get(i) for i in range(NUM_CLASSES)])
+
+
+# Initialize the W&B run.
 run = wandb.init(
     # Set the project where this run will be logged.
     project="drawing-gui",
@@ -115,6 +121,41 @@ class EarlyStopping:
         self.status = f"{self.counter}/{self.patience}"
         print(f"Early Stopping Status: {self.status}")
         return False
+
+
+def _greedy_decode(indices: npt.NDArray[np.int_]) -> str:
+    """Greedy decode character indices to a string by squashing repeated characters.
+
+    Args:
+        indices (npt.NDArray[np.int_]): The character indices.
+
+    Returns:
+        str: The decoded string.
+
+    Raises:
+        TypeError: If indices is not of type numpy.ndarray.
+        ValueError: If an index in indices is not found in INDEX_TO_CHAR.
+    """
+    if not isinstance(indices, np.ndarray):
+        raise TypeError(
+            f"Expected indices to be of type numpy.ndarray, but got {type(indices)}."
+        )
+
+    prev_char = None
+    output = []
+
+    for idx in indices:
+        if idx not in INDEX_TO_CHAR:
+            raise ValueError(f"Index {idx} not found in INDEX_TO_CHAR.")
+
+        curr_char = INDEX_TO_CHAR[idx]
+
+        if curr_char != prev_char:
+            output.append(curr_char)
+
+        prev_char = curr_char
+
+    return "".join(output)
 
 
 def _extract_load_datasets() -> (
@@ -305,17 +346,6 @@ def _validate_epoch(
 
             # Calculate target_lengths for the current batch.
             labels_no_padding = [label[label != -1] for label in labels]
-            predictions = logits.argmax(2).detach().cpu().numpy().T
-            predictions = [
-                "".join(
-                    [
-                        INDEX_TO_CHAR[index]
-                        for index in prediction
-                        if index != 0
-                    ]
-                )
-                for prediction in predictions
-            ]
             labels_to_chars = [
                 "".join(
                     [
@@ -327,8 +357,13 @@ def _validate_epoch(
             ]
             total_samples += len(labels_to_chars)
 
+            greedy_predictions = [
+                _greedy_decode(prediction)
+                for prediction in logits.argmax(2).detach().cpu().numpy().T
+            ]
+
             for i, (label, prediction) in enumerate(
-                zip(labels_to_chars, predictions)
+                zip(labels_to_chars, greedy_predictions)
             ):
                 char_error_rate = cer(label, prediction)
                 word_error_rate = wer(label, prediction)
@@ -424,17 +459,7 @@ def _test_model(
                 dtype=torch.int32,
                 device=DEVICE,
             )
-            predictions = logits.argmax(2).detach().cpu().numpy().T
-            predictions = [
-                "".join(
-                    [
-                        INDEX_TO_CHAR[index]
-                        for index in prediction
-                        if index != 0
-                    ]
-                )
-                for prediction in predictions
-            ]
+
             labels_to_chars = [
                 "".join(
                     [
@@ -446,7 +471,12 @@ def _test_model(
             ]
             total_samples += len(labels_to_chars)
 
-            for label, prediction in zip(labels_to_chars, predictions):
+            greedy_predictions = [
+                _greedy_decode(prediction)
+                for prediction in logits.argmax(2).detach().cpu().numpy().T
+            ]
+
+            for label, prediction in zip(labels_to_chars, greedy_predictions):
                 char_error_rate = cer(label, prediction)
                 word_error_rate = wer(label, prediction)
                 wandb.log(
@@ -601,11 +631,3 @@ if __name__ == "__main__":
         extraction.extract_all_data()
 
     train_model(model_type=ModelType.RNN)
-
-    # (
-    #     lstm_model,
-    #     lstm_train_losses,
-    #     lstm_val_losses,
-    #     lstm_val_cers,
-    #     lstm_val_wers
-    # ) = train_model(model_type=ModelType.LSTM)

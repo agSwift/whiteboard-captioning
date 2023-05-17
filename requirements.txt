@@ -5,3 +5,4 @@ scipy
 jiwer
 wandb
 tqdm
+pyctcdecode
