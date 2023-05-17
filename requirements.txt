@@ -6,3 +6,4 @@ jiwer
 wandb
 tqdm
 pyctcdecode
+https://github.com/kpu/kenlm/archive/master.zip
