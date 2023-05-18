@@ -274,7 +274,7 @@ def _train_epoch(
         optimizer.zero_grad()
 
         # Perform a forward pass through the model.
-        logits = model(bezier_curves).detach().requires_grad_()
+        logits = model(bezier_curves)
 
         # Create an input_lengths tensor for the CTC loss function.
         actual_batch_size = bezier_curves.size(1)
@@ -292,7 +292,6 @@ def _train_epoch(
             dtype=torch.int32,
             device=DEVICE,
         )
-
         # Calculate the CTC loss and perform backpropagation.
         loss = criterion(logits, labels, input_lengths, target_lengths)
         loss.backward()
@@ -747,4 +746,4 @@ if __name__ == "__main__":
     if not extraction.EXTRACTED_DATA_PATH.exists():
         extraction.extract_all_data()
 
-    train_model(model_type=ModelType.RNN)
+    train_model(model_type=ModelType.LSTM)

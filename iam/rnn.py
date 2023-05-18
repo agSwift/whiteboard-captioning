@@ -45,12 +45,14 @@ class BaseModel(nn.Module):
                 bezier_curve_dimension,
                 hidden_size,
                 num_layers,
+                bidirectional=True,
             )
         elif rnn_type == RNNType.GRU:
             self.rnn = nn.GRU(
                 bezier_curve_dimension,
                 hidden_size,
                 num_layers,
+                bidirectional=True,
             )
         else:
             raise ValueError(
