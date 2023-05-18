@@ -24,12 +24,13 @@ INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 # Hyperparameters.
 BATCH_SIZE = 64
 NUM_EPOCHS = 200
-HIDDEN_SIZE = 128
+HIDDEN_SIZE = 512
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
-NUM_LAYERS = 3
+NUM_LAYERS = 5
 DROPOUT_RATE = 0.3
+BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
-PATIENCE = 20
+PATIENCE = 50
 BEAM_WIDTH = 10
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -49,8 +50,10 @@ run = wandb.init(
         "hidden_size": HIDDEN_SIZE,
         "num_layers": NUM_LAYERS,
         "dropout_rate": DROPOUT_RATE,
+        "bidirectional": BIDIRECTIONAL,
         "patience": PATIENCE,
         "beam_width": BEAM_WIDTH,
+        "device": DEVICE,
     },
 )
 
@@ -387,15 +390,15 @@ def _validate_epoch(
             ]
 
             # Get the beam search decodings for the current batch.
-            beam_predictions = logits.detach().cpu().numpy()
-            beam_decodings = [
-                DECODER.decode(prediction, BEAM_WIDTH)
-                for prediction in beam_predictions
-            ]
+            # beam_predictions = logits.detach().cpu().numpy()
+            # beam_decodings = [
+            #     DECODER.decode(prediction, BEAM_WIDTH)
+            #     for prediction in beam_predictions
+            # ]
 
             # Calculate the CERs and WERs for the current batch.
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
-                zip(labels_to_strings, greedy_decodings, beam_decodings)
+                zip(labels_to_strings, greedy_decodings, ["beam"])
             ):
                 # Calculate the CERs and WERs for the current sample.
                 greedy_cer = cer(label, greedy_decoding)
@@ -531,14 +534,14 @@ def _test_model(
             ]
 
             # Get the beam search decodings for the current batch.
-            beam_predictions = logits.detach().cpu().numpy()
-            beam_decodings = [
-                DECODER.decode(prediction, BEAM_WIDTH)
-                for prediction in beam_predictions
-            ]
+            # beam_predictions = logits.detach().cpu().numpy()
+            # beam_decodings = [
+            #     DECODER.decode(prediction, BEAM_WIDTH)
+            #     for prediction in beam_predictions
+            # ]
 
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
-                zip(labels_to_strings, greedy_decodings, beam_decodings)
+                zip(labels_to_strings, greedy_decodings, ["beam"])
             ):
                 # Calculate the CERs and WERs for the current sample.
                 greedy_cer = cer(label, greedy_decoding)
@@ -632,6 +635,7 @@ def train_model(
         num_classes=NUM_CLASSES,
         num_layers=NUM_LAYERS,
         dropout=DROPOUT_RATE,
+        bidirectional=BIDIRECTIONAL,
         device=DEVICE,
     ).to(DEVICE)
 

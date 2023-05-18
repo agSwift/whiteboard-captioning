@@ -191,7 +191,7 @@ def _parse_stroke_element(stroke_elem: ET.Element) -> StrokeData:
         stroke (ET.Element): The stroke element.
 
     Returns:
-        The stroke data, which contains the x points, y points, time stamps, 
+        The stroke data, which contains the x points, y points, time stamps,
         and pen_ups information.
 
     Raises:

@@ -42,27 +42,30 @@ class BaseModel(nn.Module):
                 bezier_curve_dimension,
                 hidden_size,
                 num_layers,
+                bidirectional=bidirectional,
+                dropout=dropout,
             )
         elif rnn_type == RNNType.LSTM:
             self.rnn = nn.LSTM(
                 bezier_curve_dimension,
                 hidden_size,
                 num_layers,
-                bidirectional=True,
+                bidirectional=bidirectional,
+                dropout=dropout,
             )
         elif rnn_type == RNNType.GRU:
             self.rnn = nn.GRU(
                 bezier_curve_dimension,
                 hidden_size,
                 num_layers,
-                bidirectional=True,
+                bidirectional=bidirectional,
+                dropout=dropout,
             )
         else:
             raise ValueError(
                 f"Invalid RNN type: {rnn_type}. Must be one of {RNNType}."
             )
 
-        # self.dropout = nn.Dropout(dropout)
         self.device = device
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -77,7 +80,6 @@ class BaseModel(nn.Module):
                 (batch_size, num_classes, num_bezier_curves).
         """
         out, _ = self.rnn(x)
-        # out = self.dropout(out)
 
         out = self.fc(
             out
@@ -101,6 +103,7 @@ class RNN(BaseModel):
         num_classes: int,
         num_layers: int,
         dropout: float = 0.0,
+        bidirectional: bool = True,
         device: torch.device = torch.device("cpu"),
     ):
         super().__init__(
@@ -110,6 +113,7 @@ class RNN(BaseModel):
             num_layers=num_layers,
             rnn_type=RNNType.RNN,
             dropout=dropout,
+            bidirectional=bidirectional,
             device=device,
         )
 
@@ -125,6 +129,7 @@ class LSTM(BaseModel):
         num_classes: int,
         num_layers: int,
         dropout: float = 0.0,
+        bidirectional: bool = True,
         device: torch.device = torch.device("cpu"),
     ):
         super().__init__(
@@ -134,6 +139,7 @@ class LSTM(BaseModel):
             num_layers=num_layers,
             rnn_type=RNNType.LSTM,
             dropout=dropout,
+            bidirectional=bidirectional,
             device=device,
         )
 
@@ -149,6 +155,7 @@ class GRU(BaseModel):
         num_classes: int,
         num_layers: int,
         dropout: float = 0.0,
+        bidirectional: bool = True,
         device: torch.device = torch.device("cpu"),
     ):
         super().__init__(
@@ -158,5 +165,6 @@ class GRU(BaseModel):
             num_layers=num_layers,
             rnn_type=RNNType.GRU,
             dropout=dropout,
+            bidirectional=bidirectional,
             device=device,
         )
