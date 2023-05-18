@@ -62,7 +62,7 @@ class BaseModel(nn.Module):
                 f"Invalid RNN type: {rnn_type}. Must be one of {RNNType}."
             )
 
-        self.dropout = nn.Dropout(dropout)
+        # self.dropout = nn.Dropout(dropout)
         self.device = device
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -77,7 +77,7 @@ class BaseModel(nn.Module):
                 (batch_size, num_classes, num_bezier_curves).
         """
         out, _ = self.rnn(x)
-        out = self.dropout(out)
+        # out = self.dropout(out)
 
         out = self.fc(
             out

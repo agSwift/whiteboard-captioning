@@ -24,13 +24,13 @@ INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 # Hyperparameters.
 BATCH_SIZE = 64
 NUM_EPOCHS = 200
-HIDDEN_SIZE = 256
+HIDDEN_SIZE = 128
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
-NUM_LAYERS = 5
+NUM_LAYERS = 3
 DROPOUT_RATE = 0.3
 LEARNING_RATE = 3e-4
 PATIENCE = 20
-BEAM_WIDTH = 75
+BEAM_WIDTH = 10
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 DECODER = build_ctcdecoder(
@@ -564,15 +564,15 @@ def _test_model(
 
                 # Print the first sample in the batch.
                 if i == 0:
-                    print(f"Label: {label}")
                     print("-" * 50)
+                    print(f"Label: {label}")
                     print(f"Greedy Decoding Prediction: {greedy_decoding}")
                     print(f"Greedy Decoding CER: {greedy_cer:.4f}")
                     print(f"Greedy Decoding WER: {greedy_wer:.4f}")
-                    print("-" * 50)
                     print(f"Beam Decoding Prediction: {beam_decoding}")
                     print(f"Beam Decoding CER: {beam_cer:.4f}")
                     print(f"Beam Decoding WER: {beam_wer:.4f}")
+                    print("-" * 50)
                     print()
                     print()
 
