@@ -25,14 +25,17 @@ class BaseModel(nn.Module):
         num_layers: int,
         rnn_type: RNNType,
         dropout: float = 0.0,
+        bidirectional: bool = True,
         device: torch.device = torch.device("cpu"),
     ):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
 
-        # Output linear layer for logits.
-        self.fc = nn.Linear(hidden_size, num_classes)
+        if bidirectional:
+            self.fc = nn.Linear(hidden_size * 2, num_classes)
+        else:
+            self.fc = nn.Linear(hidden_size, num_classes)
 
         if rnn_type == RNNType.RNN:
             self.rnn = nn.RNN(
