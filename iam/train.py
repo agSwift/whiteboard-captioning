@@ -29,7 +29,7 @@ NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
 NUM_LAYERS = 5
 DROPOUT_RATE = 0.3
 BIDIRECTIONAL = True
-LEARNING_RATE = 3e-4
+LEARNING_RATE = 3e-3
 PATIENCE = 50
 BEAM_WIDTH = 10
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -319,9 +319,7 @@ def _validate_epoch(
 
     Returns:
         tuple[float, float, float, float, float]:
-            The average validation loss, the average beam search CER,
-            the average beam search WER, the average greedy search CER,
-            and the average greedy search WER.
+            The average validation loss, greedy CER, greedy WER, beam CER, and beam WER.
     """
     # Set the model to evaluation mode.
     model.eval()
@@ -329,10 +327,10 @@ def _validate_epoch(
     val_loss = 0.0
     num_samples = 0
 
-    beam_total_cer = 0.0
-    beam_total_wer = 0.0
     greedy_total_cer = 0.0
     greedy_total_wer = 0.0
+    beam_total_cer = 0.0
+    beam_total_wer = 0.0
 
     # Evaluate the model on the validation dataset.
     with torch.no_grad():
@@ -377,7 +375,6 @@ def _validate_epoch(
                 )
                 for label in labels_no_padding
             ]
-            num_samples += len(labels_to_strings)
 
             # Calculate the CTC loss and accumulate the validation loss.
             loss = criterion(logits, labels, input_lengths, target_lengths)
@@ -400,6 +397,8 @@ def _validate_epoch(
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
                 zip(labels_to_strings, greedy_decodings, ["beam"])
             ):
+                num_samples += 1
+
                 # Calculate the CERs and WERs for the current sample.
                 greedy_cer = cer(label, greedy_decoding)
                 greedy_wer = wer(label, greedy_decoding)
@@ -417,10 +416,10 @@ def _validate_epoch(
                 )
 
                 # Accumulate the CERs and WERs.
-                beam_total_cer += beam_cer
-                beam_total_wer += beam_wer
                 greedy_total_cer += greedy_cer
                 greedy_total_wer += greedy_wer
+                beam_total_cer += beam_cer
+                beam_total_wer += beam_wer
 
                 # Print the first sample in the batch.
                 if i == 0:
@@ -439,10 +438,10 @@ def _validate_epoch(
     # Return the average validation loss, CERs, and WERs.
     return (
         val_loss / num_samples,
-        beam_total_cer / num_samples,
-        beam_total_wer / num_samples,
         greedy_total_cer / num_samples,
         greedy_total_wer / num_samples,
+        beam_total_cer / num_samples,
+        beam_total_wer / num_samples,
     )
 
 
@@ -461,9 +460,8 @@ def _test_model(
 
     Returns:
         tuple[float, float, float, float, float]:
-            The average test loss, the average beam search CER,
-            the average beam search WER, the average greedy search CER,
-            and the average greedy search WER.
+            The average test loss, greedy decoding CER, greedy decoding WER,
+            beam decoding CER, and beam decoding WER.
     """
     # Set the model to evaluation mode.
     model.eval()
@@ -471,10 +469,10 @@ def _test_model(
     test_loss = 0.0
     num_samples = 0
 
-    beam_total_cer = 0.0
-    beam_total_wer = 0.0
     greedy_total_cer = 0.0
     greedy_total_wer = 0.0
+    beam_total_cer = 0.0
+    beam_total_wer = 0.0
 
     # Evaluate the model on the test dataset.
     with torch.no_grad():
@@ -525,7 +523,6 @@ def _test_model(
                 )
                 for label in labels_no_padding
             ]
-            num_samples += len(labels_to_strings)
 
             # Get the greedy search decodings for the current batch.
             greedy_predictions = logits.argmax(2).detach().cpu().numpy().T
@@ -543,6 +540,8 @@ def _test_model(
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
                 zip(labels_to_strings, greedy_decodings, ["beam"])
             ):
+                num_samples += 1
+
                 # Calculate the CERs and WERs for the current sample.
                 greedy_cer = cer(label, greedy_decoding)
                 greedy_wer = wer(label, greedy_decoding)
@@ -560,10 +559,10 @@ def _test_model(
                 )
 
                 # Accumulate the CERs and WERs.
-                beam_total_cer += beam_cer
-                beam_total_wer += beam_wer
                 greedy_total_cer += greedy_cer
                 greedy_total_wer += greedy_wer
+                beam_total_cer += beam_cer
+                beam_total_wer += beam_wer
 
                 # Print the first sample in the batch.
                 if i == 0:
@@ -582,10 +581,10 @@ def _test_model(
     # Return the average test loss, CERs, and WERs.
     return (
         test_loss / num_samples,
-        beam_total_cer / num_samples,
-        beam_total_wer / num_samples,
         greedy_total_cer / num_samples,
         greedy_total_wer / num_samples,
+        beam_total_cer / num_samples,
+        beam_total_wer / num_samples,
     )
 
 
@@ -660,10 +659,10 @@ def train_model(
         # Validate the model on the validation datasets.
         (
             val_1_loss,
-            val_1_beam_cer,
-            val_1_beam_wer,
             val_1_greedy_cer,
             val_1_greedy_wer,
+            val_1_beam_cer,
+            val_1_beam_wer,
         ) = _validate_epoch(
             model=model,
             criterion=criterion,
@@ -672,10 +671,10 @@ def train_model(
 
         (
             val_2_loss,
-            val_2_beam_cer,
-            val_2_beam_wer,
             val_2_greedy_cer,
             val_2_greedy_wer,
+            val_2_beam_cer,
+            val_2_beam_wer,
         ) = _validate_epoch(
             model=model,
             criterion=criterion,
@@ -684,19 +683,19 @@ def train_model(
 
         # Calculate the average validation loss, CER and WER.
         avg_epoch_val_loss = (val_1_loss + val_2_loss) / 2
-        avg_epoch_val_beam_cer = (val_1_beam_cer + val_2_beam_cer) / 2
-        avg_epoch_val_beam_wer = (val_1_beam_wer + val_2_beam_wer) / 2
         avg_epoch_val_greedy_cer = (val_1_greedy_cer + val_2_greedy_cer) / 2
         avg_epoch_val_greedy_wer = (val_1_greedy_wer + val_2_greedy_wer) / 2
+        avg_epoch_val_beam_cer = (val_1_beam_cer + val_2_beam_cer) / 2
+        avg_epoch_val_beam_wer = (val_1_beam_wer + val_2_beam_wer) / 2
 
         # Log the average validation loss, CERs, and WERs to Weights & Biases.
         wandb.log(
             {
                 "Validation - Loss - Per Epoch Average": avg_epoch_val_loss,
-                "Validation - Beam Decoding CER - Per Epoch Average": avg_epoch_val_beam_cer,
-                "Validation - Beam Decoding WER - Per Epoch Average": avg_epoch_val_beam_wer,
                 "Validation - Greedy Decoding CER - Per Epoch Average": avg_epoch_val_greedy_cer,
                 "Validation - Greedy Decoding WER - Per Epoch Average": avg_epoch_val_greedy_wer,
+                "Validation - Beam Decoding CER - Per Epoch Average": avg_epoch_val_beam_cer,
+                "Validation - Beam Decoding WER - Per Epoch Average": avg_epoch_val_beam_wer,
             }
         )
 
@@ -704,10 +703,10 @@ def train_model(
             f"Epoch {epoch + 1}/{NUM_EPOCHS}, "
             f"Train Loss: {train_loss:.4f}, "
             f"Val Loss: {avg_epoch_val_loss:.4f}, "
-            f"Val Beam CER: {avg_epoch_val_beam_cer:.4f}, "
-            f"Val Beam WER: {avg_epoch_val_beam_wer:.4f}, "
             f"Val Greedy CER: {avg_epoch_val_greedy_cer:.4f}, "
-            f"Val Greedy WER: {avg_epoch_val_greedy_wer:.4f}"
+            f"Val Greedy WER: {avg_epoch_val_greedy_wer:.4f}, "
+            f"Val Beam CER: {avg_epoch_val_beam_cer:.4f}, "
+            f"Val Beam WER: {avg_epoch_val_beam_wer:.4f}"
         )
 
         if early_stopping(model, avg_epoch_val_loss):
@@ -717,10 +716,10 @@ def train_model(
     # Training is complete, evaluate the model on the test dataset.
     (
         test_loss,
-        test_beam_cer,
-        test_beam_wer,
         test_greedy_cer,
         test_greedy_wer,
+        test_beam_cer,
+        test_beam_wer,
     ) = _test_model(
         model=model,
         criterion=criterion,
@@ -729,10 +728,10 @@ def train_model(
 
     print(
         f"Test Loss: {test_loss:.4f}, "
-        f"Test Beam CER: {test_beam_cer:.4f}, "
-        f"Test Beam WER: {test_beam_wer:.4f}, "
         f"Test Greedy CER: {test_greedy_cer:.4f}, "
-        f"Test Greedy WER: {test_greedy_wer:.4f}"
+        f"Test Greedy WER: {test_greedy_wer:.4f}, "
+        f"Test Beam CER: {test_beam_cer:.4f}, "
+        f"Test Beam WER: {test_beam_wer:.4f}"
     )
 
     # Create a models directory if it doesn't exist.
