@@ -274,7 +274,7 @@ def _train_epoch(
         optimizer.zero_grad()
 
         # Perform a forward pass through the model.
-        logits = model(bezier_curves)
+        logits = model(bezier_curves).detach().requires_grad_()
 
         # Create an input_lengths tensor for the CTC loss function.
         actual_batch_size = bezier_curves.size(1)
@@ -640,7 +640,7 @@ def train_model(
     early_stopping = EarlyStopping(patience=PATIENCE)
 
     # Set up the loss function and optimizer.
-    criterion = nn.CTCLoss(blank=0, reduction="mean", zero_infinity=True)
+    criterion = nn.CTCLoss(blank=0, reduction="sum", zero_infinity=True)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     # Start the training loop.
