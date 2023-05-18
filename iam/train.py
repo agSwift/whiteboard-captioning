@@ -421,15 +421,15 @@ def _validate_epoch(
 
                 # Print the first sample in the batch.
                 if i == 0:
-                    print(f"Label: {label}")
                     print("-" * 50)
+                    print(f"Label: {label}")
                     print(f"Greedy Decoding Prediction: {greedy_decoding}")
                     print(f"Greedy Decoding CER: {greedy_cer:.4f}")
                     print(f"Greedy Decoding WER: {greedy_wer:.4f}")
-                    print("-" * 50)
                     print(f"Beam Decoding Prediction: {beam_decoding}")
                     print(f"Beam Decoding CER: {beam_cer:.4f}")
                     print(f"Beam Decoding WER: {beam_wer:.4f}")
+                    print("-" * 50)
                     print()
                     print()
 
