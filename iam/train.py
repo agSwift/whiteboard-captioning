@@ -31,7 +31,7 @@ DROPOUT_RATE = 0.1
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
 PATIENCE = 50
-BEAM_WIDTH = 10
+BEAM_WIDTH = 20
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 DECODER = build_ctcdecoder(
@@ -642,7 +642,7 @@ def train_model(
     early_stopping = EarlyStopping(patience=PATIENCE)
 
     # Set up the loss function and optimizer.
-    criterion = nn.CTCLoss(blank=0, reduction="sum", zero_infinity=True)
+    criterion = nn.CTCLoss(blank=0, reduction="mean", zero_infinity=True)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     # Start the training loop.
