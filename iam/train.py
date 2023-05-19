@@ -26,6 +26,7 @@ BATCH_SIZE = 64
 NUM_EPOCHS = 200
 HIDDEN_SIZE = 256
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
+REDUCTION = "sum"
 NUM_LAYERS = 5
 DROPOUT_RATE = 0.0
 BIDIRECTIONAL = True
@@ -48,6 +49,7 @@ run = wandb.init(
         "epochs": NUM_EPOCHS,
         "batch_size": BATCH_SIZE,
         "hidden_size": HIDDEN_SIZE,
+        "reduction": REDUCTION,
         "num_layers": NUM_LAYERS,
         "dropout_rate": DROPOUT_RATE,
         "bidirectional": BIDIRECTIONAL,
@@ -642,7 +644,7 @@ def train_model(
     early_stopping = EarlyStopping(patience=PATIENCE)
 
     # Set up the loss function and optimizer.
-    criterion = nn.CTCLoss(blank=0, reduction="mean", zero_infinity=True)
+    criterion = nn.CTCLoss(blank=0, reduction=REDUCTION, zero_infinity=True)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     # Start the training loop.
