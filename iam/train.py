@@ -24,10 +24,10 @@ INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 # Hyperparameters.
 BATCH_SIZE = 64
 NUM_EPOCHS = 200
-HIDDEN_SIZE = 512
+HIDDEN_SIZE = 256
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
 NUM_LAYERS = 5
-DROPOUT_RATE = 0.1
+DROPOUT_RATE = 0.0
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
 PATIENCE = 50
