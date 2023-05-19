@@ -31,7 +31,7 @@ DROPOUT_RATE = 0.1
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
 PATIENCE = 50
-BEAM_WIDTH = 20
+BEAM_WIDTH = 1
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 DECODER = build_ctcdecoder(
