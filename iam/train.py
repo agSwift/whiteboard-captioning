@@ -8,6 +8,7 @@ from pyctcdecode import build_ctcdecoder
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+
 # from sklearn.preprocessing import MinMaxScaler
 
 from jiwer import cer, wer
@@ -33,7 +34,7 @@ DROPOUT_RATE = 0.0
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
 PATIENCE = 50
-BEAM_WIDTH = 1
+BEAM_WIDTH = 10
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 DECODER = build_ctcdecoder(
@@ -180,6 +181,7 @@ def _extract_load_datasets() -> (
         dataset.StrokeBezierDataset,
         dataset.StrokeBezierDataset,
         dataset.StrokeBezierDataset,
+        dataset.StrokeBezierDataset,
     ]
 ):
     """Extracts and loads the data from the IAM dataset.
@@ -202,6 +204,10 @@ def _extract_load_datasets() -> (
         all_bezier_data=all_bezier_data,
         dataset_type=dataset.DatasetType.TRAIN,
     )
+    train_larger = dataset.StrokeBezierDataset(
+        all_bezier_data=all_bezier_data,
+        dataset_type=dataset.DatasetType.TRAIN_LARGER,
+    )
     val_1 = dataset.StrokeBezierDataset(
         all_bezier_data=all_bezier_data,
         dataset_type=dataset.DatasetType.VAL_1,
@@ -215,20 +221,22 @@ def _extract_load_datasets() -> (
         dataset_type=dataset.DatasetType.TEST,
     )
 
-    return train, val_1, val_2, test
+    return train, train_larger, val_1, val_2, test
 
 
 def _create_data_loaders(
     *,
     train_dataset: dataset.StrokeBezierDataset,
+    train_larger_dataset: dataset.StrokeBezierDataset,
     val_1_dataset: dataset.StrokeBezierDataset,
     val_2_dataset: dataset.StrokeBezierDataset,
     test_dataset: dataset.StrokeBezierDataset,
-) -> tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
+) -> tuple[DataLoader, DataLoader, DataLoader, DataLoader, DataLoader]:
     """Creates the data loaders for the given datasets.
 
     Args:
         train_dataset (dataset.StrokeBezierDataset): The training dataset.
+        train_larger_dataset (dataset.StrokeBezierDataset): The larger training dataset.
         val_1_dataset (dataset.StrokeBezierDataset): The first validation dataset.
         val_2_dataset (dataset.StrokeBezierDataset): The second validation dataset.
         test_dataset (dataset.StrokeBezierDataset): The test dataset.
@@ -240,6 +248,9 @@ def _create_data_loaders(
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
+    train_larger_loader = DataLoader(
+        train_larger_dataset, batch_size=BATCH_SIZE, shuffle=True
+    )
     val_1_loader = DataLoader(
         val_1_dataset, batch_size=BATCH_SIZE, shuffle=False
     )
@@ -249,7 +260,13 @@ def _create_data_loaders(
     test_loader = DataLoader(
         test_dataset, batch_size=BATCH_SIZE, shuffle=False
     )
-    return train_loader, val_1_loader, val_2_loader, test_loader
+    return (
+        train_loader,
+        train_larger_loader,
+        val_1_loader,
+        val_2_loader,
+        test_loader,
+    )
 
 
 def _train_epoch(
@@ -602,11 +619,13 @@ def _test_model(
 
 def train_model(
     model_type: ModelType,
+    cross_validation: bool = False,
 ) -> tuple[nn.Module, list[float], list[float], list[float], list[float]]:
     """Train and evaluate the given model on the training, validation and test datasets.
 
     Args:
         model_type (ModelType): The type of model to train.
+        cross_validation (bool, optional): Whether to perform cross validation or not.
 
     Returns:
         tuple[nn.Module, list[float], list[float], list[float], list[float]]: The trained model,
@@ -614,6 +633,7 @@ def train_model(
     """
     (
         train_dataset,
+        train_larger_dataset,
         val_1_dataset,
         val_2_dataset,
         test_dataset,
@@ -621,6 +641,7 @@ def train_model(
 
     print(
         f"Train Dataset Size: {len(train_dataset)}\n"
+        f"Train Larger Dataset Size: {len(train_larger_dataset)}\n"
         f"Val 1 Dataset Size: {len(val_1_dataset)}\n"
         f"Val 2 Dataset Size: {len(val_2_dataset)}\n"
         f"Test Dataset Size: {len(test_dataset)}\n"
@@ -628,11 +649,13 @@ def train_model(
 
     (
         train_loader,
+        train_larger_loader,
         val_1_loader,
         val_2_loader,
         test_loader,
     ) = _create_data_loaders(
         train_dataset=train_dataset,
+        train_larger_dataset=train_larger_dataset,
         val_1_dataset=val_1_dataset,
         val_2_dataset=val_2_dataset,
         test_dataset=test_dataset,
@@ -660,12 +683,21 @@ def train_model(
     # Start the training loop.
     for epoch in range(NUM_EPOCHS):
         # Train the model for one epoch.
-        train_loss = _train_epoch(
-            model=model,
-            criterion=criterion,
-            optimizer=optimizer,
-            train_loader=train_loader,
-        )
+        if cross_validation:
+            train_loss = _train_epoch(
+                model=model,
+                criterion=criterion,
+                optimizer=optimizer,
+                train_loader=train_loader,
+            )
+        else:
+            train_loss = _train_epoch(
+                model=model,
+                criterion=criterion,
+                optimizer=optimizer,
+                train_loader=train_larger_loader,
+            )
+
         wandb.log({"Training - Loss": train_loss})
 
         # Validate the model on the validation datasets.
@@ -681,24 +713,36 @@ def train_model(
             val_loader=val_1_loader,
         )
 
-        (
-            val_2_loss,
-            val_2_greedy_cer,
-            val_2_greedy_wer,
-            val_2_beam_cer,
-            val_2_beam_wer,
-        ) = _validate_epoch(
-            model=model,
-            criterion=criterion,
-            val_loader=val_2_loader,
-        )
+        if cross_validation:
+            (
+                val_2_loss,
+                val_2_greedy_cer,
+                val_2_greedy_wer,
+                val_2_beam_cer,
+                val_2_beam_wer,
+            ) = _validate_epoch(
+                model=model,
+                criterion=criterion,
+                val_loader=val_2_loader,
+            )
 
-        # Calculate the average validation loss, CER and WER.
-        avg_epoch_val_loss = (val_1_loss + val_2_loss) / 2
-        avg_epoch_val_greedy_cer = (val_1_greedy_cer + val_2_greedy_cer) / 2
-        avg_epoch_val_greedy_wer = (val_1_greedy_wer + val_2_greedy_wer) / 2
-        avg_epoch_val_beam_cer = (val_1_beam_cer + val_2_beam_cer) / 2
-        avg_epoch_val_beam_wer = (val_1_beam_wer + val_2_beam_wer) / 2
+            # Calculate the average validation loss, CER and WER.
+            avg_epoch_val_loss = (val_1_loss + val_2_loss) / 2
+            avg_epoch_val_greedy_cer = (
+                val_1_greedy_cer + val_2_greedy_cer
+            ) / 2
+            avg_epoch_val_greedy_wer = (
+                val_1_greedy_wer + val_2_greedy_wer
+            ) / 2
+            avg_epoch_val_beam_cer = (val_1_beam_cer + val_2_beam_cer) / 2
+            avg_epoch_val_beam_wer = (val_1_beam_wer + val_2_beam_wer) / 2
+        else:
+            # Calculate the average validation loss, CER and WER.
+            avg_epoch_val_loss = val_1_loss
+            avg_epoch_val_greedy_cer = val_1_greedy_cer
+            avg_epoch_val_greedy_wer = val_1_greedy_wer
+            avg_epoch_val_beam_cer = val_1_beam_cer
+            avg_epoch_val_beam_wer = val_1_beam_wer
 
         # Log the average validation loss, CERs, and WERs to Weights & Biases.
         wandb.log(

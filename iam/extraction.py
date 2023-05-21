@@ -27,16 +27,17 @@ from tqdm import tqdm
 LINE_STROKES_DATA_DIR = Path("datasets/IAM/lineStrokes")
 LINE_LABELS_DATA_DIR = Path("datasets/IAM/ascii")
 
-EXTRACTED_DATA_PATH = Path("data/iam_bernstein_data.npz")
+EXTRACTED_DATA_PATH = Path("data/iam_combined_data.npz")
 
 
 class DatasetType(Enum):
     """An enum for the dataset types."""
 
-    TRAIN = Path("datasets/IAM/trainset.txt")
+    TRAIN = Path("datasets/IAM/trainset.txt")  # Used for cross-validation.
     VAL_1 = Path("datasets/IAM/valset1.txt")
     VAL_2 = Path("datasets/IAM/valset2.txt")
     TEST = Path("datasets/IAM/testset.txt")
+    TRAIN_LARGER = None  # Train and val_1 combined.
 
 
 @dataclass
@@ -510,19 +511,19 @@ def _fit_stroke_with_bezier_curve(
     pen_up_flag = stroke.pen_ups[-1]  # 1 if pen-up, 0 if pen-down.
 
     # Plot the original points
-    # plt.plot(stroke.x_points, stroke.y_points, "ro",label='Original Points')
-    # # Get the Bezier parameters based on a degree.
-    # data = get_bezier_parameters(stroke.x_points, stroke.y_points, degree=3)
-    # x_val = [x[0] for x in data]
-    # y_val = [x[1] for x in data]
-    # print(data)
-    # # Plot the control points
-    # plt.plot(x_val,y_val,'k--o', label='Control Points')
-    # # Plot the resulting Bezier curve
-    # xvals, yvals = bezier_curve(data, nTimes=1000)
-    # plt.plot(xvals, yvals, 'b-', label='B Curve')
-    # plt.legend()
-    # plt.show()
+    plt.plot(stroke.x_points, stroke.y_points, "ro", label="Original Points")
+    # Get the Bezier parameters based on a degree.
+    data = get_bezier_parameters(stroke.x_points, stroke.y_points, degree=3)
+    x_val = [x[0] for x in data]
+    y_val = [x[1] for x in data]
+    print(data)
+    # Plot the control points
+    plt.plot(x_val, y_val, "k--o", label="Control Points")
+    # Plot the resulting Bezier curve
+    xvals, yvals = bezier_curve(data, nTimes=1000)
+    plt.plot(xvals, yvals, "b-", label="B Curve")
+    plt.legend()
+    plt.show()
 
     return np.array(
         [
@@ -957,6 +958,12 @@ def _convert_to_numpy_and_save(
     val_2_labels, val_2_bezier_curves = convert_to_numpy(val_2_data)
     test_labels, test_bezier_curves = convert_to_numpy(test_data)
 
+    # Combine the train and val_1 data into a larger train set.
+    train_larger_labels = np.concatenate((train_labels, val_1_labels))
+    train_larger_bezier_curves = np.concatenate(
+        (train_bezier_curves, val_1_bezier_curves)
+    )
+
     # Create a data directory if it doesn't exist.
     Path("data").mkdir(parents=True, exist_ok=True)
 
@@ -971,6 +978,8 @@ def _convert_to_numpy_and_save(
         val_2_bezier_curves=val_2_bezier_curves,
         test_labels=test_labels,
         test_bezier_curves=test_bezier_curves,
+        train_larger_labels=train_larger_labels,
+        train_larger_bezier_curves=train_larger_bezier_curves,
     )
 
 
@@ -1051,4 +1060,3 @@ def extract_all_data() -> None:
         val_2_data=val_2_data,
         test_data=test_data,
     )
-    
