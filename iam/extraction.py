@@ -511,19 +511,19 @@ def _fit_stroke_with_bezier_curve(
     pen_up_flag = stroke.pen_ups[-1]  # 1 if pen-up, 0 if pen-down.
 
     # Plot the original points
-    plt.plot(stroke.x_points, stroke.y_points, "ro", label="Original Points")
-    # Get the Bezier parameters based on a degree.
-    data = get_bezier_parameters(stroke.x_points, stroke.y_points, degree=3)
-    x_val = [x[0] for x in data]
-    y_val = [x[1] for x in data]
-    print(data)
-    # Plot the control points
-    plt.plot(x_val, y_val, "k--o", label="Control Points")
-    # Plot the resulting Bezier curve
-    xvals, yvals = bezier_curve(data, nTimes=1000)
-    plt.plot(xvals, yvals, "b-", label="B Curve")
-    plt.legend()
-    plt.show()
+    # plt.plot(stroke.x_points, stroke.y_points, "ro", label="Original Points")
+    # # Get the Bezier parameters based on a degree.
+    # data = get_bezier_parameters(stroke.x_points, stroke.y_points, degree=3)
+    # x_val = [x[0] for x in data]
+    # y_val = [x[1] for x in data]
+    # print(data)
+    # # Plot the control points
+    # plt.plot(x_val, y_val, "k--o", label="Control Points")
+    # # Plot the resulting Bezier curve
+    # xvals, yvals = bezier_curve(data, nTimes=1000)
+    # plt.plot(xvals, yvals, "b-", label="B Curve")
+    # plt.legend()
+    # plt.show()
 
     return np.array(
         [
