@@ -1051,6 +1051,4 @@ def extract_all_data() -> None:
         val_2_data=val_2_data,
         test_data=test_data,
     )
-
-
-extract_all_data()
+    
