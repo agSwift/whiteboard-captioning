@@ -6,5 +6,5 @@ jiwer
 wandb
 tqdm
 pyctcdecode
-sklearn
+scikit-learn
 https://github.com/kpu/kenlm/archive/master.zip

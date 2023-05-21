@@ -15,16 +15,19 @@ from typing import Optional
 import math
 import os
 import xml.etree.ElementTree as ET
+
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import scipy.optimize
 
+# import scipy.optimize
+from scipy.special import comb
 from tqdm import tqdm
 
 LINE_STROKES_DATA_DIR = Path("datasets/IAM/lineStrokes")
 LINE_LABELS_DATA_DIR = Path("datasets/IAM/ascii")
 
-EXTRACTED_DATA_PATH = Path("data/iam_data.npz")
+EXTRACTED_DATA_PATH = Path("data/iam_bernstein_data.npz")
 
 
 class DatasetType(Enum):
@@ -40,7 +43,7 @@ class DatasetType(Enum):
 class BezierData:
     """A dataclass for the bezier curve data."""
 
-    label_file_names: list[str]
+    label_file_names: set[str]
     bezier_curves_data: list[list[npt.NDArray[np.float_]]] = field(
         default_factory=list
     )
@@ -316,6 +319,106 @@ def _get_strokes_from_stroke_file(stroke_file: Path) -> list[StrokeData]:
     return strokes
 
 
+def get_bezier_parameters(
+    x_points: list[float], y_points: list[float], degree: int = 3
+) -> list[list[float]]:
+    """Compute least square bezier curve fit using penrose pseudoinverse.
+
+    Args:
+        x_points (list[float]): X-coordinates of the points to fit.
+        y_points (list[float]): Y-coordinates of the points to fit.
+        degree (int, optional): Degree of the Bézier curve. Defaults to 3.
+
+    Returns:
+        List[List[float]]: Parameters of the Bézier curve.
+
+    Raises:
+        ValueError: If the degree is less than 1.
+        ValueError: If the number of x points and y points are not equal.
+        ValueError: If the number of points is less than the degree + 1.
+    """
+    if degree < 1:
+        raise ValueError(
+            f"Invalid degree: {degree}. Degree must be at least 1."
+        )
+
+    if len(x_points) != len(y_points):
+        raise ValueError(
+            f"Invalid points: {x_points}, {y_points}. "
+            "The number of x points and y points must be equal."
+        )
+
+    if len(x_points) < degree + 1:
+        raise ValueError(
+            f"Invalid points: {x_points}, {y_points}. "
+            f"The number of points must be at least the {degree + 1} (degree + 1)."
+        )
+
+    def bernstein_poly(n: int, t: float, k: int) -> float:
+        """Bernstein polynomial when a = 0 and b = 1."""
+        return t**k * (1 - t) ** (n - k) * comb(n, k)
+
+    def bernstein_matrix(T: list[float]) -> np.matrix:
+        """Bernstein matrix for Bézier curves."""
+        return np.matrix(
+            [
+                [bernstein_poly(degree, t, k) for k in range(degree + 1)]
+                for t in T
+            ]
+        )
+
+    def least_square_fit(points: np.ndarray, M: np.matrix) -> np.matrix:
+        """Perform least square fit using pseudoinverse."""
+        M_pseudoinv = np.linalg.pinv(M)
+        return M_pseudoinv * points
+
+    T = np.linspace(0, 1, len(x_points))
+    M = bernstein_matrix(T)
+    points = np.array(list(zip(x_points, y_points)))
+
+    bezier_params = least_square_fit(points, M).tolist()
+    bezier_params[0] = [x_points[0], y_points[0]]
+    bezier_params[-1] = [x_points[-1], y_points[-1]]
+    return bezier_params
+
+
+def bernstein_poly(i, n, t):
+    """
+    The Bernstein polynomial of n, i as a function of t
+    """
+    return comb(n, i) * (t ** (n - i)) * (1 - t) ** i
+
+
+def bezier_curve(points, nTimes=50):
+    """
+    Given a set of control points, return the
+    bezier curve defined by the control points.
+
+    points should be a list of lists, or list of tuples
+    such as [ [1,1],
+              [2,3],
+              [4,5], ..[Xn, Yn] ]
+     nTimes is the number of time steps, defaults to 1000
+
+     See http://processingjs.nihongoresources.com/bezierinfo/
+    """
+
+    nPoints = len(points)
+    xPoints = np.array([p[0] for p in points])
+    yPoints = np.array([p[1] for p in points])
+
+    t = np.linspace(0.0, 1.0, nTimes)
+
+    polynomial_array = np.array(
+        [bernstein_poly(i, nPoints - 1, t) for i in range(0, nPoints)]
+    )
+
+    xvals = np.dot(xPoints, polynomial_array)
+    yvals = np.dot(yPoints, polynomial_array)
+
+    return xvals, yvals
+
+
 def _fit_stroke_with_bezier_curve(
     stroke: StrokeData,
 ) -> npt.NDArray[np.float_]:
@@ -337,97 +440,89 @@ def _fit_stroke_with_bezier_curve(
         )
 
     # If there are less than 2 points, there is no Bezier curve to fit.
-    if len(stroke.x_points) < 2:
+    if len(stroke.x_points) < 4:
         return np.zeros((1, 10))
 
-    # Combine x and y points into a single numpy array.
-    stroke_points = np.column_stack((stroke.x_points, stroke.y_points))
-
-    def bezier_curve(
-        s_param: float,
-        alpha: npt.NDArray[np.float_],
-        beta: npt.NDArray[np.float_],
-    ) -> npt.NDArray[np.float_]:
-        """Calculate the Bezier curve using the given parameters.
-
-        Args:
-            s_param (float): The parameter s for the Bezier curve (between 0 and 1).
-            alpha (npt.NDArray[np.float_]): The coefficients for the x component of the curve.
-            beta (npt.NDArray[np.float_]): The coefficients for the y component of the curve.
-
-        Returns:
-            A numpy array containing the x and y coordinates of the Bezier curve at the given parameter s.
-        """
-        x_bezier_point = (
-            alpha[0]
-            + alpha[1] * s_param
-            + alpha[2] * s_param**2
-            + alpha[3] * s_param**3
-        )
-        y_bezier_point = (
-            beta[0]
-            + beta[1] * s_param
-            + beta[2] * s_param**2
-            + beta[3] * s_param**3
-        )
-        return np.array([x_bezier_point, y_bezier_point])
-
-    def objective_function(
-        coefficients: npt.NDArray[np.float_], points: npt.NDArray[np.float_]
-    ) -> float:
-        """Calculate the sum of squared errors (SSE) between Bezier curve points and given points.
-
-        Args:
-            coefficients (npt.NDArray[np.float_]): The coefficients for the Bezier curve.
-            points (npt.NDArray[np.float_]): The points to fit the curve to.
-
-        Returns:
-            The SSE between the Bezier curve points and the given points.
-        """
-        alpha, beta = coefficients[:4], coefficients[4:]
-        s_values = np.linspace(0, 1, len(points))
-        curve_points = np.array(
-            [bezier_curve(s, alpha, beta) for s in s_values]
-        )
-        errors = curve_points - points
-        return np.sum(errors**2)
-
-    # Find the coefficients that minimize the SSE.
-    initial_coefficients = np.ones(8)
-    result = scipy.optimize.minimize(
-        objective_function, initial_coefficients, args=(stroke_points,)
+    # Get the Bezier parameters for the stroke data.
+    bezier_params = get_bezier_parameters(
+        stroke.x_points, stroke.y_points, degree=3
     )
-    alpha, beta = result.x[:4], result.x[4:]
 
-    # Distance between end points.
-    end_point_diff = np.array([alpha[3], beta[3]])
-    end_point_diff_norm = max(np.linalg.norm(end_point_diff), 0.01)
+    # Compute the fitted points from the Bezier parameters.
+    fitted_points = bezier_curve(bezier_params)
 
-    # Distance between first control point and starting point,
-    # normalized by the distance between end points.
+    # Compute the distance between end points
+    end_point_diff = np.array(
+        [
+            bezier_params[-1][0] - bezier_params[0][0],
+            bezier_params[-1][1] - bezier_params[0][1],
+        ]
+    )
+    end_point_diff_norm = max(np.linalg.norm(end_point_diff), 0.001)
+
+    # Compute the distance between the first control point and the starting point
     control_point_dist1 = (
-        np.linalg.norm(np.array([alpha[1], beta[1]])) / end_point_diff_norm
+        np.linalg.norm(
+            np.array(
+                [
+                    bezier_params[1][0] - bezier_params[0][0],
+                    bezier_params[1][1] - bezier_params[0][1],
+                ]
+            )
+        )
+        / end_point_diff_norm
     )
 
-    # Distance between second control point and starting point,
-    # normalized by the distance between end points.
+    # Compute the distance between the second control point and the starting point
     control_point_dist2 = (
-        np.linalg.norm(np.array([alpha[2], beta[2]])) / end_point_diff_norm
+        np.linalg.norm(
+            np.array(
+                [
+                    bezier_params[2][0] - bezier_params[0][0],
+                    bezier_params[2][1] - bezier_params[0][1],
+                ]
+            )
+        )
+        / end_point_diff_norm
     )
 
-    # Get the angles between control points and endpoints in radians.
-    angle1 = math.atan2(beta[1], alpha[1])
-    angle2 = math.atan2(beta[2], alpha[2])
+    # Get the angles between control points and end points in radians.
+    angle1 = math.atan2(
+        bezier_params[1][1] - bezier_params[0][1],
+        bezier_params[1][0] - bezier_params[0][0],
+    )
+    angle2 = math.atan2(
+        bezier_params[2][1] - bezier_params[0][1],
+        bezier_params[2][0] - bezier_params[0][0],
+    )
 
-    # Calculate the time coefficients, which gives information about how the
-    # curve's shape changes over time.
+    # Calculate the time coefficients
     time_range = np.max(stroke.time_stamps) - np.min(stroke.time_stamps)
     time_coefficients = np.array(
-        [time_range * alpha[1], time_range * alpha[2], time_range * alpha[3]]
+        [
+            time_range * bezier_params[1][0],
+            time_range * bezier_params[2][0],
+            time_range * bezier_params[3][0],
+        ]
     )
 
     # Determine if the stroke is a pen-up or pen-down curve.
     pen_up_flag = stroke.pen_ups[-1]  # 1 if pen-up, 0 if pen-down.
+
+    # Plot the original points
+    # plt.plot(stroke.x_points, stroke.y_points, "ro",label='Original Points')
+    # # Get the Bezier parameters based on a degree.
+    # data = get_bezier_parameters(stroke.x_points, stroke.y_points, degree=3)
+    # x_val = [x[0] for x in data]
+    # y_val = [x[1] for x in data]
+    # print(data)
+    # # Plot the control points
+    # plt.plot(x_val,y_val,'k--o', label='Control Points')
+    # # Plot the resulting Bezier curve
+    # xvals, yvals = bezier_curve(data, nTimes=1000)
+    # plt.plot(xvals, yvals, 'b-', label='B Curve')
+    # plt.legend()
+    # plt.show()
 
     return np.array(
         [
@@ -442,6 +537,135 @@ def _fit_stroke_with_bezier_curve(
     ).reshape(
         1, -1
     )  # Will be a 2D array with shape (1, 10).
+
+
+# def _fit_stroke_with_bezier_curve(
+#     stroke: StrokeData,
+# ) -> npt.NDArray[np.float_]:
+#     """Processes the stroke data and fits it with a Bezier curve.
+
+#     Args:
+#         stroke (StrokeData): The stroke data.
+
+#     Returns:
+#         A numpy array containing the calculated Bezier curve information.
+
+#     Raises:
+#         ValueError: If the stroke data is invalid.
+#     """
+#     # Check if the stroke data is valid.
+#     if not isinstance(stroke, StrokeData):
+#         raise ValueError(
+#             f"Invalid stroke data: {stroke}. Must be an instance of {StrokeData}."
+#         )
+
+#     # If there are less than 2 points, there is no Bezier curve to fit.
+#     if len(stroke.x_points) < 2:
+#         return np.zeros((1, 10))
+
+#     # Combine x and y points into a single numpy array.
+#     stroke_points = np.column_stack((stroke.x_points, stroke.y_points))
+
+#     def bezier_curve(
+#         s_param: float,
+#         alpha: npt.NDArray[np.float_],
+#         beta: npt.NDArray[np.float_],
+#     ) -> npt.NDArray[np.float_]:
+#         """Calculate the Bezier curve using the given parameters.
+
+#         Args:
+#             s_param (float): The parameter s for the Bezier curve (between 0 and 1).
+#             alpha (npt.NDArray[np.float_]): The coefficients for the x component of the curve.
+#             beta (npt.NDArray[np.float_]): The coefficients for the y component of the curve.
+
+#         Returns:
+#             A numpy array containing the x and y coordinates of the Bezier curve at
+#             the given parameter s.
+#         """
+#         x_bezier_point = (
+#             alpha[0]
+#             + alpha[1] * s_param
+#             + alpha[2] * s_param**2
+#             + alpha[3] * s_param**3
+#         )
+#         y_bezier_point = (
+#             beta[0]
+#             + beta[1] * s_param
+#             + beta[2] * s_param**2
+#             + beta[3] * s_param**3
+#         )
+#         return np.array([x_bezier_point, y_bezier_point])
+
+#     def objective_function(
+#         coefficients: npt.NDArray[np.float_], points: npt.NDArray[np.float_]
+#     ) -> float:
+#         """Calculate the sum of squared errors (SSE) between Bezier curve points and given points.
+
+#         Args:
+#             coefficients (npt.NDArray[np.float_]): The coefficients for the Bezier curve.
+#             points (npt.NDArray[np.float_]): The points to fit the curve to.
+
+#         Returns:
+#             The SSE between the Bezier curve points and the given points.
+#         """
+#         alpha, beta = coefficients[:4], coefficients[4:]
+#         s_values = np.linspace(0, 1, len(points))
+#         curve_points = np.array(
+#             [bezier_curve(s, alpha, beta) for s in s_values]
+#         )
+#         errors = curve_points - points
+#         return np.sum(errors**2)
+
+#     # Find the coefficients that minimize the SSE.
+#     initial_coefficients = np.ones(8)
+#     result = scipy.optimize.minimize(
+#         objective_function, initial_coefficients, args=(stroke_points,)
+#     )
+#     alpha, beta = result.x[:4], result.x[4:]
+
+#     # Distance between end points.
+#     end_point_diff = np.array([alpha[3], beta[3]])
+#     end_point_diff_norm = max(np.linalg.norm(end_point_diff), 0.001)
+
+#     # Distance between first control point and starting point,
+#     # normalized by the distance between end points.
+#     control_point_dist1 = (
+#         np.linalg.norm(np.array([alpha[1], beta[1]])) / end_point_diff_norm
+#     )
+
+#     # Distance between second control point and starting point,
+#     # normalized by the distance between end points.
+#     control_point_dist2 = (
+#         np.linalg.norm(np.array([alpha[2], beta[2]])) / end_point_diff_norm
+#     )
+
+#     # Get the angles between control points and endpoints in radians.
+#     angle1 = math.atan2(beta[1], alpha[1])
+#     angle2 = math.atan2(beta[2], alpha[2])
+
+#     # Calculate the time coefficients, which gives information about how the
+#     # curve's shape changes over time.
+#     time_range = np.max(stroke.time_stamps) - np.min(stroke.time_stamps)
+#     time_coefficients = np.array(
+#         [time_range * alpha[1], time_range * alpha[2], time_range * alpha[3]]
+#     )
+
+#     # Determine if the stroke is a pen-up or pen-down curve.
+#     pen_up_flag = stroke.pen_ups[-1]  # 1 if pen-up, 0 if pen-down.
+
+#     return np.array(
+#         [
+#             *end_point_diff,
+#             control_point_dist1,
+#             control_point_dist2,
+#             angle1,
+#             angle2,
+#             *time_coefficients,
+#             pen_up_flag,
+#         ]
+#     ).reshape(
+#         1, -1
+#     )  # Will be a 2D array with shape (1, 10).
 
 
 def _filter_and_get_stroke_file_paths(
@@ -489,13 +713,13 @@ def _set_up_train_val_test_data_stores() -> (
     """
 
     def get_train_val_test_label_file_names() -> (
-        tuple[set[str], set[str], set[str]]
+        tuple[set[str], set[str], set[str], set[str]]
     ):
         """Get the label file names for train, first validation, second validation, and test sets.
 
         Returns:
-            tuple[set[str], set[str], set[str]]: A tuple of sets of label file names for the train,
-                first validation, second validation, and test sets.
+            tuple[set[str], set[str], set[str], set[str]]: A tuple of sets of label file names for
+                train, first validation, second validation, and test sets.
         """
 
         def _get_dataset_label_file_names(
@@ -827,3 +1051,6 @@ def extract_all_data() -> None:
         val_2_data=val_2_data,
         test_data=test_data,
     )
+
+
+extract_all_data()
