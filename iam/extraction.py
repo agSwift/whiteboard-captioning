@@ -401,18 +401,23 @@ def _fit_stroke_with_bezier_curve(
 
     # Distance between end points.
     end_point_diff = np.array([alpha[3], beta[3]])
+    end_point_diff_norm = np.linalg.norm(end_point_diff)
+
+    # If the norm is less than the minimum threshold, use the threshold instead.
+    if end_point_diff_norm < 1:
+        end_point_diff_norm = 1
 
     # Distance between first control point and starting point,
     # normalized by the distance between end points.
-    control_point_dist1 = np.linalg.norm(
-        np.array([alpha[1], beta[1]])
-    ) / np.linalg.norm(end_point_diff)
+    control_point_dist1 = (
+        np.linalg.norm(np.array([alpha[1], beta[1]])) / end_point_diff_norm
+    )
 
     # Distance between second control point and starting point,
     # normalized by the distance between end points.
-    control_point_dist2 = np.linalg.norm(
-        np.array([alpha[2], beta[2]])
-    ) / np.linalg.norm(end_point_diff)
+    control_point_dist2 = (
+        np.linalg.norm(np.array([alpha[2], beta[2]])) / end_point_diff_norm
+    )
 
     # Get the angles between control points and endpoints in radians.
     angle1 = math.atan2(beta[1], alpha[1])
