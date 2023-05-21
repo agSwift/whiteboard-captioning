@@ -45,10 +45,9 @@ class StrokeBezierDataset(Dataset):
                 f"Invalid stroke data: {all_bezier_data}. "
                 f"Must be an instance of {NpzFile}."
             )
-        if not isinstance(scaler, MinMaxScaler):
+        if scaler is not None and not isinstance(scaler, MinMaxScaler):
             raise ValueError(
-                f"Invalid scaler: {scaler}. "
-                f"Must be an instance of {MinMaxScaler}."
+                f"Invalid scaler: {scaler}. Must be an instance of {MinMaxScaler}."
             )
 
         # Check that all_bezier_data contains the required data.
