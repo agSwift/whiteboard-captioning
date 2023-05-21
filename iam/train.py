@@ -8,6 +8,7 @@ from pyctcdecode import build_ctcdecoder
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+from sklearn.preprocessing import MinMaxScaler
 
 from jiwer import cer, wer
 import wandb
@@ -26,8 +27,8 @@ BATCH_SIZE = 64
 NUM_EPOCHS = 200
 HIDDEN_SIZE = 256
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
-REDUCTION = "sum"
-NUM_LAYERS = 5
+REDUCTION = "mean"
+NUM_LAYERS = 3
 DROPOUT_RATE = 0.0
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
@@ -191,18 +192,31 @@ def _extract_load_datasets() -> (
     # Load the data.
     all_bezier_data = np.load(extraction.EXTRACTED_DATA_PATH)
 
+    # Fit MinMaxScaler on the training data.
+    scaler = MinMaxScaler()
+    train_bezier_curves = all_bezier_data["train_bezier_curves"].reshape(-1, 10)
+    scaler.fit(train_bezier_curves)
+
     # Create the datasets.
     train = dataset.StrokeBezierDataset(
-        all_bezier_data=all_bezier_data, dataset_type=dataset.DatasetType.TRAIN
+        all_bezier_data=all_bezier_data,
+        dataset_type=dataset.DatasetType.TRAIN,
+        scaler=scaler,
     )
     val_1 = dataset.StrokeBezierDataset(
-        all_bezier_data=all_bezier_data, dataset_type=dataset.DatasetType.VAL_1
+        all_bezier_data=all_bezier_data,
+        dataset_type=dataset.DatasetType.VAL_1,
+        scaler=scaler,
     )
     val_2 = dataset.StrokeBezierDataset(
-        all_bezier_data=all_bezier_data, dataset_type=dataset.DatasetType.VAL_2
+        all_bezier_data=all_bezier_data,
+        dataset_type=dataset.DatasetType.VAL_2,
+        scaler=scaler,
     )
     test = dataset.StrokeBezierDataset(
-        all_bezier_data=all_bezier_data, dataset_type=dataset.DatasetType.TEST
+        all_bezier_data=all_bezier_data,
+        dataset_type=dataset.DatasetType.TEST,
+        scaler=scaler,
     )
 
     return train, val_1, val_2, test
