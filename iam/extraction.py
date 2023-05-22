@@ -540,6 +540,8 @@ def _fit_stroke_with_bezier_curve(
     )  # Will be a 2D array with shape (1, 10).
 
 
+# Slower version of the above function, using scipy.optimize.minimize.
+
 # def _fit_stroke_with_bezier_curve(
 #     stroke: StrokeData,
 # ) -> npt.NDArray[np.float_]:
@@ -958,10 +960,49 @@ def _convert_to_numpy_and_save(
     val_2_labels, val_2_bezier_curves = convert_to_numpy(val_2_data)
     test_labels, test_bezier_curves = convert_to_numpy(test_data)
 
-    # Combine the train and val_1 data into a larger train set.
+    print("train_labels.shape", train_labels.shape)
+    print("train_bezier_curves.shape", train_bezier_curves.shape)
+    print("val_1_labels.shape", val_1_labels.shape)
+    print("val_1_bezier_curves.shape", val_1_bezier_curves.shape)
+
+    # Create a larger train set by padding and concatenating the train and val_1 data.
+    num_train_larger_curves = max(
+        train_bezier_curves.shape[1], val_1_bezier_curves.shape[1]
+    )
+    train_bezier_curves_more_padding = np.concatenate(
+        (
+            train_bezier_curves,
+            np.full(
+                (
+                    train_bezier_curves.shape[0],
+                    num_train_larger_curves - train_bezier_curves.shape[1],
+                    1,
+                    10,
+                ),
+                -1,
+            ),
+        ),
+        axis=1,
+    )
+    val_1_bezier_curves_more_padding = np.concatenate(
+        (
+            val_1_bezier_curves,
+            np.full(
+                (
+                    val_1_bezier_curves.shape[0],
+                    num_train_larger_curves - val_1_bezier_curves.shape[1],
+                    1,
+                    10,
+                ),
+                -1,
+            ),
+        ),
+        axis=1,
+    )
+
     train_larger_labels = np.concatenate((train_labels, val_1_labels))
     train_larger_bezier_curves = np.concatenate(
-        (train_bezier_curves, val_1_bezier_curves)
+        (train_bezier_curves_more_padding, val_1_bezier_curves_more_padding)
     )
 
     # Create a data directory if it doesn't exist.
@@ -1060,3 +1101,6 @@ def extract_all_data() -> None:
         val_2_data=val_2_data,
         test_data=test_data,
     )
+
+
+extract_all_data()
