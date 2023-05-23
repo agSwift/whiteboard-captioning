@@ -119,7 +119,7 @@ def _get_bezier_control_points(
     if len(x_points) < degree + 1:
         raise ValueError(
             f"Invalid points: {x_points}, {y_points}. "
-            f"The number of points must be at least the {degree + 1} (degree + 1)."
+            f"The number of points must be at least {degree + 1} (degree + 1)."
         )
 
     def bernstein_poly(n: int, t: float, k: int) -> float:
@@ -207,8 +207,8 @@ def _bezier_curve(
             for x and y coordinates of the points on the bezier curve.
     """
     num_points = len(control_points)
-    x_points = np.array([point[0] for point in control_points])
-    y_points = np.array([point[1] for point in control_points])
+    control_x_points = np.array([point[0] for point in control_points])
+    control_y_points = np.array([point[1] for point in control_points])
 
     t_values = np.linspace(0.0, 1.0, num_time_steps)
 
@@ -219,10 +219,10 @@ def _bezier_curve(
         ]
     )
 
-    x_vals = np.dot(x_points, polynomial_array)
-    y_vals = np.dot(y_points, polynomial_array)
+    bezier_x_points = np.dot(control_x_points, polynomial_array)
+    bezier_y_points = np.dot(control_y_points, polynomial_array)
 
-    return x_vals, y_vals
+    return bezier_x_points, bezier_y_points
 
 
 def _plot_stroke_and_bezier_curve(

@@ -543,7 +543,6 @@ def _test_model(
             # Calculate the CTC loss and accumulate the test loss.
             loss = criterion(logits, labels, input_lengths, target_lengths)
             test_loss += loss.item()
-            wandb.log({"Test - Loss": loss.item()})
 
             # Convert the labels to strings for the CER and WER calculations.
             labels_to_strings = [
@@ -668,6 +667,8 @@ def train_model(
         device=DEVICE,
     ).to(DEVICE)
 
+    wandb.watch(model)
+
     # Set up the early stopping callback.
     early_stopping = EarlyStopping(patience=PATIENCE)
 
@@ -693,7 +694,7 @@ def train_model(
                 train_loader=train_single_val_loader,
             )
 
-        wandb.log({"Training - Loss": train_loss})
+        wandb.log({"Training - Loss": train_loss}, step=epoch)
 
         # Validate the model on the validation datasets.
         (
@@ -747,7 +748,8 @@ def train_model(
                 "Validation - Greedy Decoding WER - Per Epoch Average": avg_epoch_val_greedy_wer,
                 "Validation - Beam Decoding CER - Per Epoch Average": avg_epoch_val_beam_cer,
                 "Validation - Beam Decoding WER - Per Epoch Average": avg_epoch_val_beam_wer,
-            }
+            },
+            step=epoch,
         )
 
         print(
@@ -766,23 +768,33 @@ def train_model(
 
     # Training is complete, evaluate the model on the test dataset.
     (
-        test_loss,
-        test_greedy_cer,
-        test_greedy_wer,
-        test_beam_cer,
-        test_beam_wer,
+        test_avg_loss,
+        test_avg_greedy_cer,
+        test_avg_greedy_wer,
+        test_avg_beam_cer,
+        test_avg_beam_wer,
     ) = _test_model(
         model=model,
         criterion=criterion,
         test_loader=test_loader,
     )
 
+    wandb.log(
+        {
+            "Test - Average Loss": test_avg_loss,
+            "Test - Average Greedy CER": test_avg_greedy_cer,
+            "Test - Average Greedy WER": test_avg_greedy_wer,
+            "Test - Average Beam CER": test_avg_beam_cer,
+            "Test - Average Beam WER": test_avg_beam_wer,
+        }
+    )
+
     print(
-        f"Test Loss: {test_loss:.4f}, "
-        f"Test Greedy CER: {test_greedy_cer:.4f}, "
-        f"Test Greedy WER: {test_greedy_wer:.4f}, "
-        f"Test Beam CER: {test_beam_cer:.4f}, "
-        f"Test Beam WER: {test_beam_wer:.4f}"
+        f"Test Average Loss: {test_avg_loss:.4f}, "
+        f"Test Average Greedy CER: {test_avg_greedy_cer:.4f}, "
+        f"Test Average Greedy WER: {test_avg_greedy_wer:.4f}, "
+        f"Test Average Beam CER: {test_avg_beam_cer:.4f}, "
+        f"Test Average Beam WER: {test_avg_beam_wer:.4f}"
     )
 
     # Create a models directory if it doesn't exist.
