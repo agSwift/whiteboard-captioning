@@ -7,58 +7,35 @@ The following files were filtered out when extracting the data, as they are inva
 a08-551z-08.xml, a08-551z-09.xml, and all z01-000z stroke XML files.
 """
 
-from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-import math
 import os
 import xml.etree.ElementTree as ET
-
-import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-
-# import scipy.optimize
-from scipy.special import comb
 from tqdm import tqdm
+
+import bezier
+from bezier import BezierData, StrokeData
 
 LINE_STROKES_DATA_DIR = Path("datasets/IAM/lineStrokes")
 LINE_LABELS_DATA_DIR = Path("datasets/IAM/ascii")
 
-EXTRACTED_DATA_PATH = Path("data/iam_combined_data.npz")
+EXTRACTED_DATA_PATH = Path("data/new_iam_data.npz")
 
 
 class DatasetType(Enum):
     """An enum for the dataset types."""
 
-    TRAIN = Path("datasets/IAM/trainset.txt")  # Used for cross-validation.
+    TRAIN_CROSS_VAL = Path(
+        "datasets/IAM/trainset.txt"
+    )  # Used during cross validation.
     VAL_1 = Path("datasets/IAM/valset1.txt")
     VAL_2 = Path("datasets/IAM/valset2.txt")
     TEST = Path("datasets/IAM/testset.txt")
-    TRAIN_LARGER = None  # Train and val_1 combined.
-
-
-@dataclass
-class BezierData:
-    """A dataclass for the bezier curve data."""
-
-    label_file_names: set[str]
-    bezier_curves_data: list[list[npt.NDArray[np.float_]]] = field(
-        default_factory=list
-    )
-    labels: list[str] = field(default_factory=list)
-
-
-@dataclass
-class StrokeData:
-    """A dataclass for the stroke data."""
-
-    x_points: list[float]
-    y_points: list[float]
-    time_stamps: list[float]
-    pen_ups: list[int]  # 1 if pen is up (end of stroke), 0 if pen is down.
+    TRAIN_SINGLE_VAL = None  # Train and val_1 combined. Used during validation on single dataset.
 
 
 def _get_line_from_labels_file(
@@ -320,357 +297,6 @@ def _get_strokes_from_stroke_file(stroke_file: Path) -> list[StrokeData]:
     return strokes
 
 
-def get_bezier_parameters(
-    x_points: list[float], y_points: list[float], degree: int = 3
-) -> list[list[float]]:
-    """Compute least square bezier curve fit using penrose pseudoinverse.
-
-    Args:
-        x_points (list[float]): X-coordinates of the points to fit.
-        y_points (list[float]): Y-coordinates of the points to fit.
-        degree (int, optional): Degree of the Bézier curve. Defaults to 3.
-
-    Returns:
-        List[List[float]]: Parameters of the Bézier curve.
-
-    Raises:
-        ValueError: If the degree is less than 1.
-        ValueError: If the number of x points and y points are not equal.
-        ValueError: If the number of points is less than the degree + 1.
-    """
-    if degree < 1:
-        raise ValueError(
-            f"Invalid degree: {degree}. Degree must be at least 1."
-        )
-
-    if len(x_points) != len(y_points):
-        raise ValueError(
-            f"Invalid points: {x_points}, {y_points}. "
-            "The number of x points and y points must be equal."
-        )
-
-    if len(x_points) < degree + 1:
-        raise ValueError(
-            f"Invalid points: {x_points}, {y_points}. "
-            f"The number of points must be at least the {degree + 1} (degree + 1)."
-        )
-
-    def bernstein_poly(n: int, t: float, k: int) -> float:
-        """Bernstein polynomial when a = 0 and b = 1."""
-        return t**k * (1 - t) ** (n - k) * comb(n, k)
-
-    def bernstein_matrix(T: list[float]) -> np.matrix:
-        """Bernstein matrix for Bézier curves."""
-        return np.matrix(
-            [
-                [bernstein_poly(degree, t, k) for k in range(degree + 1)]
-                for t in T
-            ]
-        )
-
-    def least_square_fit(points: np.ndarray, M: np.matrix) -> np.matrix:
-        """Perform least square fit using pseudoinverse."""
-        M_pseudoinv = np.linalg.pinv(M)
-        return M_pseudoinv * points
-
-    T = np.linspace(0, 1, len(x_points))
-    M = bernstein_matrix(T)
-    points = np.array(list(zip(x_points, y_points)))
-
-    bezier_params = least_square_fit(points, M).tolist()
-    bezier_params[0] = [x_points[0], y_points[0]]
-    bezier_params[-1] = [x_points[-1], y_points[-1]]
-    return bezier_params
-
-
-def bernstein_poly(i, n, t):
-    """
-    The Bernstein polynomial of n, i as a function of t
-    """
-    return comb(n, i) * (t ** (n - i)) * (1 - t) ** i
-
-
-def bezier_curve(points, nTimes=50):
-    """
-    Given a set of control points, return the
-    bezier curve defined by the control points.
-
-    points should be a list of lists, or list of tuples
-    such as [ [1,1],
-              [2,3],
-              [4,5], ..[Xn, Yn] ]
-     nTimes is the number of time steps, defaults to 1000
-
-     See http://processingjs.nihongoresources.com/bezierinfo/
-    """
-
-    nPoints = len(points)
-    xPoints = np.array([p[0] for p in points])
-    yPoints = np.array([p[1] for p in points])
-
-    t = np.linspace(0.0, 1.0, nTimes)
-
-    polynomial_array = np.array(
-        [bernstein_poly(i, nPoints - 1, t) for i in range(0, nPoints)]
-    )
-
-    xvals = np.dot(xPoints, polynomial_array)
-    yvals = np.dot(yPoints, polynomial_array)
-
-    return xvals, yvals
-
-
-def _fit_stroke_with_bezier_curve(
-    stroke: StrokeData,
-) -> npt.NDArray[np.float_]:
-    """Processes the stroke data and fits it with a Bezier curve.
-
-    Args:
-        stroke (StrokeData): The stroke data.
-
-    Returns:
-        A numpy array containing the calculated Bezier curve information.
-
-    Raises:
-        ValueError: If the stroke data is invalid.
-    """
-    # Check if the stroke data is valid.
-    if not isinstance(stroke, StrokeData):
-        raise ValueError(
-            f"Invalid stroke data: {stroke}. Must be an instance of {StrokeData}."
-        )
-
-    # If there are less than 2 points, there is no Bezier curve to fit.
-    if len(stroke.x_points) < 4:
-        return np.zeros((1, 10))
-
-    # Get the Bezier parameters for the stroke data.
-    bezier_params = get_bezier_parameters(
-        stroke.x_points, stroke.y_points, degree=3
-    )
-
-    # Compute the fitted points from the Bezier parameters.
-    fitted_points = bezier_curve(bezier_params)
-
-    # Compute the distance between end points
-    end_point_diff = np.array(
-        [
-            bezier_params[-1][0] - bezier_params[0][0],
-            bezier_params[-1][1] - bezier_params[0][1],
-        ]
-    )
-    end_point_diff_norm = max(np.linalg.norm(end_point_diff), 0.001)
-
-    # Compute the distance between the first control point and the starting point
-    control_point_dist1 = (
-        np.linalg.norm(
-            np.array(
-                [
-                    bezier_params[1][0] - bezier_params[0][0],
-                    bezier_params[1][1] - bezier_params[0][1],
-                ]
-            )
-        )
-        / end_point_diff_norm
-    )
-
-    # Compute the distance between the second control point and the starting point
-    control_point_dist2 = (
-        np.linalg.norm(
-            np.array(
-                [
-                    bezier_params[2][0] - bezier_params[0][0],
-                    bezier_params[2][1] - bezier_params[0][1],
-                ]
-            )
-        )
-        / end_point_diff_norm
-    )
-
-    # Get the angles between control points and end points in radians.
-    angle1 = math.atan2(
-        bezier_params[1][1] - bezier_params[0][1],
-        bezier_params[1][0] - bezier_params[0][0],
-    )
-    angle2 = math.atan2(
-        bezier_params[2][1] - bezier_params[0][1],
-        bezier_params[2][0] - bezier_params[0][0],
-    )
-
-    # Calculate the time coefficients
-    time_range = np.max(stroke.time_stamps) - np.min(stroke.time_stamps)
-    time_coefficients = np.array(
-        [
-            time_range * bezier_params[1][0],
-            time_range * bezier_params[2][0],
-            time_range * bezier_params[3][0],
-        ]
-    )
-
-    # Determine if the stroke is a pen-up or pen-down curve.
-    pen_up_flag = stroke.pen_ups[-1]  # 1 if pen-up, 0 if pen-down.
-
-    # Plot the original points
-    # plt.plot(stroke.x_points, stroke.y_points, "ro", label="Original Points")
-    # # Get the Bezier parameters based on a degree.
-    # data = get_bezier_parameters(stroke.x_points, stroke.y_points, degree=3)
-    # x_val = [x[0] for x in data]
-    # y_val = [x[1] for x in data]
-    # print(data)
-    # # Plot the control points
-    # plt.plot(x_val, y_val, "k--o", label="Control Points")
-    # # Plot the resulting Bezier curve
-    # xvals, yvals = bezier_curve(data, nTimes=1000)
-    # plt.plot(xvals, yvals, "b-", label="B Curve")
-    # plt.legend()
-    # plt.show()
-
-    return np.array(
-        [
-            *end_point_diff,
-            control_point_dist1,
-            control_point_dist2,
-            angle1,
-            angle2,
-            *time_coefficients,
-            pen_up_flag,
-        ]
-    ).reshape(
-        1, -1
-    )  # Will be a 2D array with shape (1, 10).
-
-
-# Slower version of the above function, using scipy.optimize.minimize.
-
-# def _fit_stroke_with_bezier_curve(
-#     stroke: StrokeData,
-# ) -> npt.NDArray[np.float_]:
-#     """Processes the stroke data and fits it with a Bezier curve.
-
-#     Args:
-#         stroke (StrokeData): The stroke data.
-
-#     Returns:
-#         A numpy array containing the calculated Bezier curve information.
-
-#     Raises:
-#         ValueError: If the stroke data is invalid.
-#     """
-#     # Check if the stroke data is valid.
-#     if not isinstance(stroke, StrokeData):
-#         raise ValueError(
-#             f"Invalid stroke data: {stroke}. Must be an instance of {StrokeData}."
-#         )
-
-#     # If there are less than 2 points, there is no Bezier curve to fit.
-#     if len(stroke.x_points) < 2:
-#         return np.zeros((1, 10))
-
-#     # Combine x and y points into a single numpy array.
-#     stroke_points = np.column_stack((stroke.x_points, stroke.y_points))
-
-#     def bezier_curve(
-#         s_param: float,
-#         alpha: npt.NDArray[np.float_],
-#         beta: npt.NDArray[np.float_],
-#     ) -> npt.NDArray[np.float_]:
-#         """Calculate the Bezier curve using the given parameters.
-
-#         Args:
-#             s_param (float): The parameter s for the Bezier curve (between 0 and 1).
-#             alpha (npt.NDArray[np.float_]): The coefficients for the x component of the curve.
-#             beta (npt.NDArray[np.float_]): The coefficients for the y component of the curve.
-
-#         Returns:
-#             A numpy array containing the x and y coordinates of the Bezier curve at
-#             the given parameter s.
-#         """
-#         x_bezier_point = (
-#             alpha[0]
-#             + alpha[1] * s_param
-#             + alpha[2] * s_param**2
-#             + alpha[3] * s_param**3
-#         )
-#         y_bezier_point = (
-#             beta[0]
-#             + beta[1] * s_param
-#             + beta[2] * s_param**2
-#             + beta[3] * s_param**3
-#         )
-#         return np.array([x_bezier_point, y_bezier_point])
-
-#     def objective_function(
-#         coefficients: npt.NDArray[np.float_], points: npt.NDArray[np.float_]
-#     ) -> float:
-#         """Calculate the sum of squared errors (SSE) between Bezier curve points and given points.
-
-#         Args:
-#             coefficients (npt.NDArray[np.float_]): The coefficients for the Bezier curve.
-#             points (npt.NDArray[np.float_]): The points to fit the curve to.
-
-#         Returns:
-#             The SSE between the Bezier curve points and the given points.
-#         """
-#         alpha, beta = coefficients[:4], coefficients[4:]
-#         s_values = np.linspace(0, 1, len(points))
-#         curve_points = np.array(
-#             [bezier_curve(s, alpha, beta) for s in s_values]
-#         )
-#         errors = curve_points - points
-#         return np.sum(errors**2)
-
-#     # Find the coefficients that minimize the SSE.
-#     initial_coefficients = np.ones(8)
-#     result = scipy.optimize.minimize(
-#         objective_function, initial_coefficients, args=(stroke_points,)
-#     )
-#     alpha, beta = result.x[:4], result.x[4:]
-
-#     # Distance between end points.
-#     end_point_diff = np.array([alpha[3], beta[3]])
-#     end_point_diff_norm = max(np.linalg.norm(end_point_diff), 0.001)
-
-#     # Distance between first control point and starting point,
-#     # normalized by the distance between end points.
-#     control_point_dist1 = (
-#         np.linalg.norm(np.array([alpha[1], beta[1]])) / end_point_diff_norm
-#     )
-
-#     # Distance between second control point and starting point,
-#     # normalized by the distance between end points.
-#     control_point_dist2 = (
-#         np.linalg.norm(np.array([alpha[2], beta[2]])) / end_point_diff_norm
-#     )
-
-#     # Get the angles between control points and endpoints in radians.
-#     angle1 = math.atan2(beta[1], alpha[1])
-#     angle2 = math.atan2(beta[2], alpha[2])
-
-#     # Calculate the time coefficients, which gives information about how the
-#     # curve's shape changes over time.
-#     time_range = np.max(stroke.time_stamps) - np.min(stroke.time_stamps)
-#     time_coefficients = np.array(
-#         [time_range * alpha[1], time_range * alpha[2], time_range * alpha[3]]
-#     )
-
-#     # Determine if the stroke is a pen-up or pen-down curve.
-#     pen_up_flag = stroke.pen_ups[-1]  # 1 if pen-up, 0 if pen-down.
-
-#     return np.array(
-#         [
-#             *end_point_diff,
-#             control_point_dist1,
-#             control_point_dist2,
-#             angle1,
-#             angle2,
-#             *time_coefficients,
-#             pen_up_flag,
-#         ]
-#     ).reshape(
-#         1, -1
-#     )  # Will be a 2D array with shape (1, 10).
-
-
 def _filter_and_get_stroke_file_paths(
     *, root: str, stroke_files: list[str]
 ) -> list[Path]:
@@ -744,8 +370,8 @@ def _set_up_train_val_test_data_stores() -> (
                     label_file_names.add(label_file_name.strip())
             return label_file_names
 
-        train_data_file_names = _get_dataset_label_file_names(
-            DatasetType.TRAIN
+        train_cross_val_data_file_names = _get_dataset_label_file_names(
+            DatasetType.TRAIN_CROSS_VAL
         )
         val_1_data_file_names = _get_dataset_label_file_names(
             DatasetType.VAL_1
@@ -756,15 +382,21 @@ def _set_up_train_val_test_data_stores() -> (
         test_data_file_names = _get_dataset_label_file_names(DatasetType.TEST)
 
         # Check that the train, first validation, second validation, and test sets are disjoint.
-        if not train_data_file_names.isdisjoint(val_1_data_file_names):
+        if not train_cross_val_data_file_names.isdisjoint(
+            val_1_data_file_names
+        ):
             raise ValueError(
                 "The train and first validation sets are not disjoint."
             )
-        if not train_data_file_names.isdisjoint(val_2_data_file_names):
+        if not train_cross_val_data_file_names.isdisjoint(
+            val_2_data_file_names
+        ):
             raise ValueError(
                 "The train and second validation sets are not disjoint."
             )
-        if not train_data_file_names.isdisjoint(test_data_file_names):
+        if not train_cross_val_data_file_names.isdisjoint(
+            test_data_file_names
+        ):
             raise ValueError("The train and test sets are not disjoint.")
         if not val_1_data_file_names.isdisjoint(val_2_data_file_names):
             raise ValueError(
@@ -780,22 +412,22 @@ def _set_up_train_val_test_data_stores() -> (
             )
 
         return (
-            train_data_file_names,
+            train_cross_val_data_file_names,
             val_1_data_file_names,
             val_2_data_file_names,
             test_data_file_names,
         )
 
     (
-        train_label_file_names,
+        train_cross_val_label_file_names,
         val_1_label_file_names,
         val_2_label_file_names,
         test_label_file_names,
     ) = get_train_val_test_label_file_names()
 
-    train_data = BezierData(
-        label_file_names=train_label_file_names
-    )  # The train dataset.
+    train_cross_val_data = BezierData(
+        label_file_names=train_cross_val_label_file_names
+    )  # The train dataset used for cross validation.
 
     val_1_data = BezierData(
         label_file_names=val_1_label_file_names
@@ -809,7 +441,7 @@ def _set_up_train_val_test_data_stores() -> (
         label_file_names=test_label_file_names
     )  # The test dataset.
 
-    return train_data, val_1_data, val_2_data, test_data
+    return train_cross_val_data, val_1_data, val_2_data, test_data
 
 
 def _append_label_bezier_curves_data(
@@ -817,7 +449,7 @@ def _append_label_bezier_curves_data(
     label: str,
     labels_file_name: str,
     bezier_curves_data: list[npt.NDArray[np.float_]],
-    train_data: BezierData,
+    train_cross_val_data: BezierData,
     val_1_data: BezierData,
     val_2_data: BezierData,
     test_data: BezierData,
@@ -831,7 +463,7 @@ def _append_label_bezier_curves_data(
         labels_file_name (str): The name of the labels file.
         bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays containing
             Bezier curve information for each stroke in the stroke file.
-        train_data (BezierData): The train dataset.
+        train_cross_val_data (BezierData): The train dataset used for cross validation.
         val_1_data (BezierData): The first validation dataset.
         val_2_data (BezierData): The second validation dataset.
         test_data (BezierData): The test dataset.
@@ -839,9 +471,9 @@ def _append_label_bezier_curves_data(
     Returns:
         None.
     """
-    if labels_file_name in train_data.label_file_names:
-        train_data.labels.append(label)
-        train_data.bezier_curves_data.append(bezier_curves_data)
+    if labels_file_name in train_cross_val_data.label_file_names:
+        train_cross_val_data.labels.append(label)
+        train_cross_val_data.bezier_curves_data.append(bezier_curves_data)
     elif labels_file_name in val_1_data.label_file_names:
         val_1_data.labels.append(label)
         val_1_data.bezier_curves_data.append(bezier_curves_data)
@@ -855,15 +487,18 @@ def _append_label_bezier_curves_data(
 
 def _convert_to_numpy_and_save(
     *,
-    train_data: BezierData,
+    train_cross_val_data: BezierData,
     val_1_data: BezierData,
     val_2_data: BezierData,
     test_data: BezierData,
 ):
     """Convert the data to numpy arrays.
 
+    A larger training dataset (train_cross_val_data combined with
+    val_1_data) is also created and saved.
+
     Args:
-        train_data (BezierData): The train data.
+        train_cross_val_data (BezierData): The train data used for cross validation.
         val_1_data (BezierData): The first validation data.
         val_2_data (BezierData): The second validation data.
         test_data (BezierData): The test data.
@@ -871,59 +506,6 @@ def _convert_to_numpy_and_save(
     Raises:
         ValueError: If the data is invalid.
     """
-
-    def is_valid_bezier_data(data: BezierData) -> None:
-        """Check that the data is valid.
-
-        Args:
-            data (BezierData): The data to check.
-
-        Raises:
-            ValueError: If the data is invalid.
-        """
-        if len(data.labels) != len(data.bezier_curves_data):
-            raise ValueError(
-                f"Length of labels ({len(data.labels)}) does not match length of Bezier curves "
-                f"data ({len(data.bezier_curves_data)})."
-            )
-
-    def pad_bezier_curves_data(
-        all_bezier_curves_data: list[npt.NDArray[np.float_]],
-    ) -> npt.NDArray[np.float_]:
-        """Pad the Bezier curves data with -1 so that all strokes have the same number of curves.
-
-        Args:
-            all_bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays
-                containing Bezier curve information for each stroke. Each array has shape
-                (number_of_curves, 10), with 10 columns representing various
-                properties of the Bezier curve.
-
-        Returns:
-            npt.NDArray[np.float_]: A 3D numpy array with shape
-                (number_of_strokes, max_number_of_curves, 10), where each row represents the Bezier
-                curve information of a stroke, and each stroke is padded with -1 values to have the
-                same number of curves.
-
-        Raises:
-            ValueError: If there is no Bezier curve data.
-        """
-        if not all_bezier_curves_data:
-            raise ValueError("There is no Bezier curve data.")
-
-        max_num_curves = max(len(curves) for curves in all_bezier_curves_data)
-
-        return np.array(
-            [
-                np.concatenate(
-                    (
-                        curves,
-                        np.full((max_num_curves - len(curves), 1, 10), -1),
-                    ),
-                    axis=0,
-                )
-                for curves in all_bezier_curves_data
-            ]
-        )
 
     def convert_to_numpy(
         data: BezierData,
@@ -941,7 +523,9 @@ def _convert_to_numpy_and_save(
             AssertionError: If the number of labels does not match the number of Bezier curves.
         """
         labels_arr = np.array(data.labels)
-        bezier_curves_arr = pad_bezier_curves_data(data.bezier_curves_data)
+        bezier_curves_arr = bezier.pad_bezier_curves_data(
+            data.bezier_curves_data
+        )
 
         assert labels_arr.shape[0] == bezier_curves_arr.shape[0], (
             f"Number of labels ({labels_arr.shape[0]}) does not match number of Bezier curves "
@@ -951,31 +535,34 @@ def _convert_to_numpy_and_save(
         return labels_arr, bezier_curves_arr
 
     # Check that the data is valid.
-    for data in [train_data, val_1_data, val_2_data, test_data]:
-        is_valid_bezier_data(data)
+    for data in [train_cross_val_data, val_1_data, val_2_data, test_data]:
+        bezier.is_valid_bezier_data(data)
 
     # Convert the data to numpy arrays.
-    train_labels, train_bezier_curves = convert_to_numpy(train_data)
+    train_cross_val_labels, train_cross_val_bezier_curves = convert_to_numpy(
+        train_cross_val_data
+    )
     val_1_labels, val_1_bezier_curves = convert_to_numpy(val_1_data)
     val_2_labels, val_2_bezier_curves = convert_to_numpy(val_2_data)
     test_labels, test_bezier_curves = convert_to_numpy(test_data)
 
-    print("train_labels.shape", train_labels.shape)
-    print("train_bezier_curves.shape", train_bezier_curves.shape)
-    print("val_1_labels.shape", val_1_labels.shape)
-    print("val_1_bezier_curves.shape", val_1_bezier_curves.shape)
-
-    # Create a larger train set by padding and concatenating the train and val_1 data.
+    # Create a larger train set used during single validation by combining
+    # the train_cross_val_data and val_1_data sets.
     num_train_larger_curves = max(
-        train_bezier_curves.shape[1], val_1_bezier_curves.shape[1]
+        train_cross_val_bezier_curves.shape[1], val_1_bezier_curves.shape[1]
     )
-    train_bezier_curves_more_padding = np.concatenate(
+
+    # Add further padding to the train_cross_val_bezier_curves
+    # val_1_bezier_curves data, so that they are then same size
+    # and can be concatenated.
+    train_cross_val_bezier_curves_padded = np.concatenate(
         (
-            train_bezier_curves,
+            train_cross_val_bezier_curves,
             np.full(
                 (
-                    train_bezier_curves.shape[0],
-                    num_train_larger_curves - train_bezier_curves.shape[1],
+                    train_cross_val_bezier_curves.shape[0],
+                    num_train_larger_curves
+                    - train_cross_val_bezier_curves.shape[1],
                     1,
                     10,
                 ),
@@ -984,7 +571,7 @@ def _convert_to_numpy_and_save(
         ),
         axis=1,
     )
-    val_1_bezier_curves_more_padding = np.concatenate(
+    val_1_bezier_curves_padded = np.concatenate(
         (
             val_1_bezier_curves,
             np.full(
@@ -1000,9 +587,11 @@ def _convert_to_numpy_and_save(
         axis=1,
     )
 
-    train_larger_labels = np.concatenate((train_labels, val_1_labels))
-    train_larger_bezier_curves = np.concatenate(
-        (train_bezier_curves_more_padding, val_1_bezier_curves_more_padding)
+    train_single_val_labels = np.concatenate(
+        (train_cross_val_labels, val_1_labels)
+    )
+    train_single_val_bezier_curves = np.concatenate(
+        (train_cross_val_bezier_curves_padded, val_1_bezier_curves_padded)
     )
 
     # Create a data directory if it doesn't exist.
@@ -1011,20 +600,20 @@ def _convert_to_numpy_and_save(
     # Save the data to a numpy .npz file.
     np.savez_compressed(
         EXTRACTED_DATA_PATH,
-        train_labels=train_labels,
-        train_bezier_curves=train_bezier_curves,
+        train_cross_val_labels=train_cross_val_labels,
+        train_cross_val_bezier_curves=train_cross_val_bezier_curves,
         val_1_labels=val_1_labels,
         val_1_bezier_curves=val_1_bezier_curves,
         val_2_labels=val_2_labels,
         val_2_bezier_curves=val_2_bezier_curves,
         test_labels=test_labels,
         test_bezier_curves=test_bezier_curves,
-        train_larger_labels=train_larger_labels,
-        train_larger_bezier_curves=train_larger_bezier_curves,
+        train_single_val_labels=train_single_val_labels,
+        train_single_val_bezier_curves=train_single_val_bezier_curves,
     )
 
 
-def extract_all_data() -> None:
+def extract_all_data(bezier_curve_degree: int = 3) -> None:
     """Extract all data from the IAM On-Line Handwriting Database and save it to a numpy .npz file.
 
     This function processes the data and saves it in the following format:
@@ -1044,9 +633,15 @@ def extract_all_data() -> None:
             8. Time coefficient for the second control point.
             9. Time coefficient for the end point.
             10. Pen-up flag (1 if the pen is up after the stroke, 0 if the pen is down).
+
+    Args:
+        bezier_curve_degree: The degree of the Bezier curves to use. Defaults to 3.
+
+    Returns:
+        None. The data is saved to a numpy .npz file.
     """
     (
-        train_data,
+        train_cross_val_data,
         val_1_data,
         val_2_data,
         test_data,
@@ -1080,7 +675,10 @@ def extract_all_data() -> None:
 
             # Compute the Bezier curves for the stroke file.
             bezier_curves_data = [
-                _fit_stroke_with_bezier_curve(stroke) for stroke in strokes
+                bezier.fit_stroke_with_bezier_curve(
+                    stroke=stroke, degree=bezier_curve_degree
+                )
+                for stroke in strokes
             ]
 
             # Append the label and Bezier curve data to the appropriate dataset.
@@ -1088,19 +686,17 @@ def extract_all_data() -> None:
                 label=line_label,
                 labels_file_name=labels_file_name,
                 bezier_curves_data=bezier_curves_data,
-                train_data=train_data,
+                train_cross_val_data=train_cross_val_data,
                 val_1_data=val_1_data,
                 val_2_data=val_2_data,
                 test_data=test_data,
             )
 
     # Convert the data to numpy arrays and save it to a .npz file.
+    # A larger training set is also created and saved in this step.
     _convert_to_numpy_and_save(
-        train_data=train_data,
+        train_cross_val_data=train_cross_val_data,
         val_1_data=val_1_data,
         val_2_data=val_2_data,
         test_data=test_data,
     )
-
-
-extract_all_data()

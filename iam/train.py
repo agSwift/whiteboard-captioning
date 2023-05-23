@@ -1,3 +1,4 @@
+"""For training models on the IAM dataset."""
 import copy
 from enum import Enum
 from pathlib import Path
@@ -24,19 +25,21 @@ INDEX_TO_CHAR = {index: char for char, index in dataset.CHAR_TO_INDEX.items()}
 INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 
 # Hyperparameters.
-BATCH_SIZE = 64
-NUM_EPOCHS = 200
-HIDDEN_SIZE = 256
+BATCH_SIZE = 32
+NUM_EPOCHS = 500
+HIDDEN_SIZE = 128
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
+BEZIER_CURVE_DEGREE = 3
 REDUCTION = "mean"
 NUM_LAYERS = 3
-DROPOUT_RATE = 0.0
+DROPOUT_RATE = 0.1
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
 PATIENCE = 50
 BEAM_WIDTH = 10
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# TODO: Add new decoder or fix CTC decoding.
 DECODER = build_ctcdecoder(
     labels=[INDEX_TO_CHAR.get(i) for i in range(1, NUM_CLASSES)],
 )
@@ -51,6 +54,7 @@ run = wandb.init(
         "epochs": NUM_EPOCHS,
         "batch_size": BATCH_SIZE,
         "hidden_size": HIDDEN_SIZE,
+        "bezier_curve_degree": BEZIER_CURVE_DEGREE,
         "reduction": REDUCTION,
         "num_layers": NUM_LAYERS,
         "dropout_rate": DROPOUT_RATE,
@@ -114,6 +118,7 @@ class EarlyStopping:
             # Set the best_loss to the current validation loss and store the model.
             self.best_loss = val_loss
             self.best_model = copy.deepcopy(model)
+
         # Check if the current validation loss is lower than the best loss by
         # at least min_delta.
         elif self.best_loss - val_loss > self.min_delta:
@@ -121,22 +126,27 @@ class EarlyStopping:
             self.best_loss = val_loss
             self.counter = 0
             self.best_model.load_state_dict(model.state_dict())
+
         # Check if the current validation loss is not lower than the best loss
         # by at least min_delta.
         elif self.best_loss - val_loss < self.min_delta:
             self.counter += 1
+
             # If the counter is greater than or equal to patience, then stop training.
             if self.counter >= self.patience:
                 self.status = f"Early stopped on {self.counter}"
+
                 # If restore_best_weight is True, restore the model weights from the
                 # epoch with the best validation loss
                 if self.restore_best_weight:
                     model.load_state_dict(self.best_model.state_dict())
+
                 return True
 
         # Update the status.
         self.status = f"{self.counter}/{self.patience}"
         print(f"Early Stopping Status: {self.status}")
+
         return False
 
 
@@ -194,19 +204,20 @@ def _extract_load_datasets() -> (
     # Load the data.
     all_bezier_data = np.load(extraction.EXTRACTED_DATA_PATH)
 
+    # TODO: Record metrics when using MinMaxScaler.
     # Fit MinMaxScaler on the training data.
     # scaler = MinMaxScaler()
     # train_bezier_curves = all_bezier_data["train_bezier_curves"].reshape(-1, 10)
     # scaler.fit(train_bezier_curves)
 
     # Create the datasets.
-    train = dataset.StrokeBezierDataset(
+    train_cross_val = dataset.StrokeBezierDataset(
         all_bezier_data=all_bezier_data,
-        dataset_type=dataset.DatasetType.TRAIN,
+        dataset_type=dataset.DatasetType.TRAIN_CROSS_VAL,
     )
-    train_larger = dataset.StrokeBezierDataset(
+    train_single_val = dataset.StrokeBezierDataset(
         all_bezier_data=all_bezier_data,
-        dataset_type=dataset.DatasetType.TRAIN_LARGER,
+        dataset_type=dataset.DatasetType.TRAIN_SINGLE_VAL,
     )
     val_1 = dataset.StrokeBezierDataset(
         all_bezier_data=all_bezier_data,
@@ -221,13 +232,13 @@ def _extract_load_datasets() -> (
         dataset_type=dataset.DatasetType.TEST,
     )
 
-    return train, train_larger, val_1, val_2, test
+    return train_cross_val, train_single_val, val_1, val_2, test
 
 
 def _create_data_loaders(
     *,
-    train_dataset: dataset.StrokeBezierDataset,
-    train_larger_dataset: dataset.StrokeBezierDataset,
+    train_cross_val_dataset: dataset.StrokeBezierDataset,
+    train_single_val_dataset: dataset.StrokeBezierDataset,
     val_1_dataset: dataset.StrokeBezierDataset,
     val_2_dataset: dataset.StrokeBezierDataset,
     test_dataset: dataset.StrokeBezierDataset,
@@ -235,8 +246,8 @@ def _create_data_loaders(
     """Creates the data loaders for the given datasets.
 
     Args:
-        train_dataset (dataset.StrokeBezierDataset): The training dataset.
-        train_larger_dataset (dataset.StrokeBezierDataset): The larger training dataset.
+        train_cross_val_dataset (dataset.StrokeBezierDataset): The cross validation training dataset.
+        train_single_val_dataset (dataset.StrokeBezierDataset): The single validation training dataset.
         val_1_dataset (dataset.StrokeBezierDataset): The first validation dataset.
         val_2_dataset (dataset.StrokeBezierDataset): The second validation dataset.
         test_dataset (dataset.StrokeBezierDataset): The test dataset.
@@ -245,11 +256,11 @@ def _create_data_loaders(
         tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
             The training, validation, and test data loaders.
     """
-    train_loader = DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True
+    train_cross_val_loader = DataLoader(
+        train_cross_val_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
-    train_larger_loader = DataLoader(
-        train_larger_dataset, batch_size=BATCH_SIZE, shuffle=True
+    train_single_val_loader = DataLoader(
+        train_single_val_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
     val_1_loader = DataLoader(
         val_1_dataset, batch_size=BATCH_SIZE, shuffle=False
@@ -261,8 +272,8 @@ def _create_data_loaders(
         test_dataset, batch_size=BATCH_SIZE, shuffle=False
     )
     return (
-        train_loader,
-        train_larger_loader,
+        train_cross_val_loader,
+        train_single_val_loader,
         val_1_loader,
         val_2_loader,
         test_loader,
@@ -299,7 +310,8 @@ def _train_epoch(
 
         # Remove the extra dimension from the bezier curves.
         bezier_curves = bezier_curves.squeeze(-2)
-        # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim).
+        # Transform from shape (batch_size, seq_len, feature_dim) to
+        # (seq_len, batch_size, feature_dim).
         bezier_curves = bezier_curves.permute(1, 0, 2)
 
         # Clear the gradients of the model parameters.
@@ -366,7 +378,8 @@ def _validate_epoch(
         for bezier_curves, labels in val_loader:
             # Remove the extra dimension from the bezier curves.
             bezier_curves = bezier_curves.squeeze(-2)
-            # (batch_size, seq_len, feature_dim) -> (seq_len, batch_size, feature_dim).
+            # Transform from shape (batch_size, seq_len, feature_dim) to
+            # (seq_len, batch_size, feature_dim).
             bezier_curves = bezier_curves.permute(1, 0, 2)
             # Move the batch data to the device (CPU or GPU).
             bezier_curves, labels = (
@@ -433,16 +446,6 @@ def _validate_epoch(
                 greedy_wer = wer(label, greedy_decoding)
                 beam_cer = cer(label, beam_decoding)
                 beam_wer = wer(label, beam_decoding)
-
-                # Log the CERs and WERs to Weights & Biases.
-                wandb.log(
-                    {
-                        "Validation - Greedy Decoding CER": greedy_cer,
-                        "Validation - Greedy Decoding WER": greedy_wer,
-                        "Validation - Beam Decoding CER": beam_cer,
-                        "Validation - Beam Decoding WER": beam_wer,
-                    }
-                )
 
                 # Accumulate the CERs and WERs.
                 greedy_total_cer += greedy_cer
@@ -577,16 +580,6 @@ def _test_model(
                 beam_cer = cer(label, beam_decoding)
                 beam_wer = wer(label, beam_decoding)
 
-                # Log the CERs and WERs to Weights & Biases.
-                wandb.log(
-                    {
-                        "Test - Greedy Decoding CER": greedy_cer,
-                        "Test - Greedy Decoding WER": greedy_wer,
-                        "Test - Beam Decoding CER": beam_cer,
-                        "Test - Beam Decoding WER": beam_wer,
-                    }
-                )
-
                 # Accumulate the CERs and WERs.
                 greedy_total_cer += greedy_cer
                 greedy_total_wer += greedy_wer
@@ -632,37 +625,39 @@ def train_model(
             the training loss, the validation loss, the validation CER and the validation WER.
     """
     (
-        train_dataset,
-        train_larger_dataset,
+        train_cross_val_dataset,
+        train_single_val_dataset,
         val_1_dataset,
         val_2_dataset,
         test_dataset,
     ) = _extract_load_datasets()
 
     print(
-        f"Train Dataset Size: {len(train_dataset)}\n"
-        f"Train Larger Dataset Size: {len(train_larger_dataset)}\n"
+        f"Train Cross Val Dataset Size: {len(train_cross_val_dataset)}\n"
+        f"Train Single Val Dataset Size: {len(train_single_val_dataset)}\n"
         f"Val 1 Dataset Size: {len(val_1_dataset)}\n"
         f"Val 2 Dataset Size: {len(val_2_dataset)}\n"
         f"Test Dataset Size: {len(test_dataset)}\n"
     )
 
     (
-        train_loader,
-        train_larger_loader,
+        train_cross_val_loader,
+        train_single_val_loader,
         val_1_loader,
         val_2_loader,
         test_loader,
     ) = _create_data_loaders(
-        train_dataset=train_dataset,
-        train_larger_dataset=train_larger_dataset,
+        train_cross_val_dataset=train_cross_val_dataset,
+        train_single_val_dataset=train_single_val_dataset,
         val_1_dataset=val_1_dataset,
         val_2_dataset=val_2_dataset,
         test_dataset=test_dataset,
     )
 
     # Create the model.
-    bezier_curve_dimension = train_dataset.all_bezier_curves[0].shape[-1]
+    bezier_curve_dimension = train_cross_val_dataset.all_bezier_curves[
+        0
+    ].shape[-1]
     model = model_type.value(
         bezier_curve_dimension=bezier_curve_dimension,
         hidden_size=HIDDEN_SIZE,
@@ -688,14 +683,14 @@ def train_model(
                 model=model,
                 criterion=criterion,
                 optimizer=optimizer,
-                train_loader=train_loader,
+                train_loader=train_cross_val_loader,
             )
         else:
             train_loss = _train_epoch(
                 model=model,
                 criterion=criterion,
                 optimizer=optimizer,
-                train_loader=train_larger_loader,
+                train_loader=train_single_val_loader,
             )
 
         wandb.log({"Training - Loss": train_loss})
@@ -803,6 +798,6 @@ def train_model(
 
 if __name__ == "__main__":
     if not extraction.EXTRACTED_DATA_PATH.exists():
-        extraction.extract_all_data()
+        extraction.extract_all_data(BEZIER_CURVE_DEGREE)
 
     train_model(model_type=ModelType.LSTM)
