@@ -26,16 +26,16 @@ INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 
 # Hyperparameters.
 BATCH_SIZE = 32
-NUM_EPOCHS = 500
+NUM_EPOCHS = 1000
 HIDDEN_SIZE = 128
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
-BEZIER_CURVE_DEGREE = 3
+BEZIER_CURVE_DEGREE = 5
 REDUCTION = "mean"
 NUM_LAYERS = 3
 DROPOUT_RATE = 0.1
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
-PATIENCE = 50
+PATIENCE = 100
 BEAM_WIDTH = 10
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -809,7 +809,5 @@ def train_model(
 
 
 if __name__ == "__main__":
-    if not extraction.EXTRACTED_DATA_PATH.exists():
-        extraction.extract_all_data(BEZIER_CURVE_DEGREE)
-
+    extraction.extract_all_data(BEZIER_CURVE_DEGREE)
     train_model(model_type=ModelType.LSTM)
