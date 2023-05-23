@@ -551,6 +551,7 @@ def _convert_to_numpy_and_save(
     num_train_larger_curves = max(
         train_cross_val_bezier_curves.shape[1], val_1_bezier_curves.shape[1]
     )
+    num_bezier_curve_features = len(train_cross_val_bezier_curves[0][0][0])
 
     # Add further padding to the train_cross_val_bezier_curves
     # val_1_bezier_curves data, so that they are then same size
@@ -564,7 +565,7 @@ def _convert_to_numpy_and_save(
                     num_train_larger_curves
                     - train_cross_val_bezier_curves.shape[1],
                     1,
-                    10,
+                    num_bezier_curve_features,
                 ),
                 -1,
             ),
@@ -579,7 +580,7 @@ def _convert_to_numpy_and_save(
                     val_1_bezier_curves.shape[0],
                     num_train_larger_curves - val_1_bezier_curves.shape[1],
                     1,
-                    10,
+                    num_bezier_curve_features,
                 ),
                 -1,
             ),
@@ -619,7 +620,7 @@ def extract_all_data(bezier_curve_degree: int = 3) -> None:
     This function processes the data and saves it in the following format:
     - labels: a list of strings, where each string represents a line label from the database.
 
-    - bezier_data: a 2D numpy array with shape (number_of_strokes, 10), where each row
+    - bezier_data: a 2D numpy array with shape (number_of_strokes, num_bezier_curve_features), where each row
         represents the Bezier curve information of a stroke. The columns contain the following:
             1. x difference of the end points.
             2. y difference of the end points.

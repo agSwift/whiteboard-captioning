@@ -55,14 +55,14 @@ def pad_bezier_curves_data(
     Args:
         all_bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays
             containing Bezier curve information for each stroke. Each array has shape
-            (number_of_curves, 10), with 10 columns representing various
-            properties of the Bezier curve.
+            (number_of_curves, num_bezier_features), with (num_bezier_features) columns
+            representing various properties of the Bezier curve.
 
     Returns:
         npt.NDArray[np.float_]: A 3D numpy array with shape
-            (number_of_strokes, max_number_of_curves, 10), where each row represents the Bezier
-            curve information of a stroke, and each stroke is padded with -1 values to have the
-            same number of curves.
+            (number_of_strokes, max_number_of_curves, num_bezier_features), where each row
+            represents the Bezier curve information of a stroke, and each stroke is padded
+            with -1 values to have the same number of curves.
 
     Raises:
         ValueError: If there is no Bezier curve data.
@@ -71,13 +71,22 @@ def pad_bezier_curves_data(
         raise ValueError("There is no Bezier curve data.")
 
     max_num_curves = max(len(curves) for curves in all_bezier_curves_data)
+    num_bezier_features = len(all_bezier_curves_data[0][0][0])
+
+    for curves in all_bezier_curves_data:
+        assert (
+            len(curves[0][0]) == num_bezier_features
+        ), "The number of bezier features must be the same for all curves."
 
     return np.array(
         [
             np.concatenate(
                 (
                     curves,
-                    np.full((max_num_curves - len(curves), 1, 10), -1),
+                    np.full(
+                        (max_num_curves - len(curves), 1, num_bezier_features),
+                        -1,
+                    ),
                 ),
                 axis=0,
             )
@@ -280,9 +289,11 @@ def fit_stroke_with_bezier_curve(
     if not isinstance(degree, int):
         raise ValueError(f"Invalid degree: {degree}. Must be an integer.")
 
+    expected_num_bezier_curve_features = degree * 3 + 2
+
     # Check if the stroke data has enough points.
     if len(stroke.x_points) < degree + 1:
-        return np.zeros((1, 10))
+        return np.zeros((1, expected_num_bezier_curve_features))
 
     # Get the Bezier control points for the stroke data.
     bezier_control_points = _get_bezier_control_points(
@@ -292,7 +303,7 @@ def fit_stroke_with_bezier_curve(
     # Plot the stroke data and the Bezier curve.
     # _plot_stroke_and_bezier_curve(stroke, bezier_control_points)
 
-    # Compute the distance between end points
+    # Compute the distance between end points (first and last control points).
     end_point_diff = np.array(
         [
             bezier_control_points[-1][0] - bezier_control_points[0][0],
@@ -301,68 +312,80 @@ def fit_stroke_with_bezier_curve(
     )
     end_point_diff_norm = max(np.linalg.norm(end_point_diff), 0.001)
 
-    # Compute the distance between the first control point and the starting point
-    control_point_dist1 = (
-        np.linalg.norm(
-            np.array(
-                [
-                    bezier_control_points[1][0] - bezier_control_points[0][0],
-                    bezier_control_points[1][1] - bezier_control_points[0][1],
-                ]
-            )
-        )
-        / end_point_diff_norm
+    # Compute the distances between control points and starting points.
+    control_point_distributions = np.array(
+        [
+            [
+                np.linalg.norm(
+                    np.array(
+                        [
+                            bezier_control_points[i][0]
+                            - bezier_control_points[0][0],
+                            bezier_control_points[i][1]
+                            - bezier_control_points[0][1],
+                        ]
+                    )
+                )
+                / end_point_diff_norm
+            ]
+            for i in range(1, len(bezier_control_points))
+        ]
     )
 
-    # Compute the distance between the second control point and the starting point
-    control_point_dist2 = (
-        np.linalg.norm(
-            np.array(
-                [
-                    bezier_control_points[2][0] - bezier_control_points[0][0],
-                    bezier_control_points[2][1] - bezier_control_points[0][1],
-                ]
-            )
-        )
-        / end_point_diff_norm
+    # Compute the angles between control points and end points (first and last control points).
+    angles = np.array(
+        [
+            [
+                math.atan2(
+                    bezier_control_points[i][1] - bezier_control_points[0][1],
+                    bezier_control_points[i][0] - bezier_control_points[0][0],
+                )
+            ]
+            for i in range(1, len(bezier_control_points))
+        ]
     )
 
-    # Get the angles between control points and end points in radians.
-    angle1 = math.atan2(
-        bezier_control_points[1][1] - bezier_control_points[0][1],
-        bezier_control_points[1][0] - bezier_control_points[0][0],
-    )
-    angle2 = math.atan2(
-        bezier_control_points[2][1] - bezier_control_points[0][1],
-        bezier_control_points[2][0] - bezier_control_points[0][0],
-    )
-
-    # Calculate the time coefficients
+    # Calculate the time coefficients for all control points. The time coefficients are the
+    # time stamps of the control points relative to the time stamps of the first and last points.
     time_range = np.max(stroke.time_stamps) - np.min(stroke.time_stamps)
     time_coefficients = np.array(
         [
-            time_range * bezier_control_points[1][0],
-            time_range * bezier_control_points[2][0],
-            time_range * bezier_control_points[3][0],
+            time_range * bezier_control_points[i][0]
+            for i in range(1, len(bezier_control_points) - 1)
         ]
     )
 
     # Determine if the stroke is a pen-up or pen-down curve.
     pen_up_flag = stroke.pen_ups[-1]  # 1 if pen-up, 0 if pen-down.
 
+    num_fitted_curve_features = (
+        len(end_point_diff)
+        + len(control_point_distributions)
+        + len(angles)
+        + len(time_coefficients)
+        + pen_up_flag
+    )
+
+    assert (
+        (len(end_point_diff) == 2)
+        and (len(control_point_distributions) == degree)
+        and (len(angles) == degree)
+        and (len(time_coefficients) == degree - 1)
+        and (pen_up_flag == 1)
+        and num_fitted_curve_features == expected_num_bezier_curve_features
+    ), "Invalid number of features for the fitted Bezier curve."
+
     return np.array(
         [
             *end_point_diff,
-            control_point_dist1,
-            control_point_dist2,
-            angle1,
-            angle2,
+            *control_point_distributions.reshape(-1),
+            *angles.reshape(-1),
             *time_coefficients,
             pen_up_flag,
         ]
     ).reshape(
         1, -1
-    )  # Will be a 2D array with shape (1, 10).
+    )  # Will be a 2D array with shape (1, expected_num_bezier_curve_features).
 
 
 # Slower version of the above function, using scipy.optimize.minimize.
