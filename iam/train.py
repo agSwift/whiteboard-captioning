@@ -27,12 +27,13 @@ INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 # Hyperparameters.
 BATCH_SIZE = 32
 NUM_EPOCHS = 1000
-HIDDEN_SIZE = 128
+HIDDEN_SIZE = 256
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
 BEZIER_CURVE_DEGREE = 5
+CROSS_VALIDATION = False
 REDUCTION = "mean"
 NUM_LAYERS = 3
-DROPOUT_RATE = 0.1
+DROPOUT_RATE = 0.3
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
 PATIENCE = 100
@@ -55,6 +56,7 @@ run = wandb.init(
         "batch_size": BATCH_SIZE,
         "hidden_size": HIDDEN_SIZE,
         "bezier_curve_degree": BEZIER_CURVE_DEGREE,
+        "cross_validation": CROSS_VALIDATION,
         "reduction": REDUCTION,
         "num_layers": NUM_LAYERS,
         "dropout_rate": DROPOUT_RATE,
@@ -185,24 +187,39 @@ def _greedy_decode(indices: npt.NDArray[np.int_]) -> str:
     return "".join(output)
 
 
-def _extract_load_datasets() -> (
-    tuple[
-        dataset.StrokeBezierDataset,
-        dataset.StrokeBezierDataset,
-        dataset.StrokeBezierDataset,
-        dataset.StrokeBezierDataset,
-        dataset.StrokeBezierDataset,
-    ]
-):
+def _extract_load_datasets(
+    *,
+    bezier_degree: int,
+    with_cross_val: bool,
+) -> tuple[
+    dataset.StrokeBezierDataset,
+    dataset.StrokeBezierDataset,
+    dataset.StrokeBezierDataset,
+    dataset.StrokeBezierDataset,
+    dataset.StrokeBezierDataset,
+]:
     """Extracts and loads the data from the IAM dataset.
+
+    Args:
+        bezier_degree (int): The degree of the bezier curve.
+        with_cross_val (bool): Whether to use cross validation or not.
 
     Returns:
         tuple[dataset.StrokeBezierDataset, dataset.StrokeBezierDataset, dataset.StrokeBezierDataset,
         dataset.StrokeBezierDataset]:
             The training, validation, and test datasets.
     """
+    extracted_data_path = extraction.get_extracted_data_file_path(
+        with_cross_val=with_cross_val, bezier_degree=bezier_degree
+    )
+
+    if not extracted_data_path.exists():
+        extraction.extract_all_data(
+            with_cross_val=with_cross_val, bezier_degree=bezier_degree
+        )
+
     # Load the data.
-    all_bezier_data = np.load(extraction.EXTRACTED_DATA_PATH)
+    all_bezier_data = np.load(extracted_data_path)
 
     # TODO: Record metrics when using MinMaxScaler.
     # Fit MinMaxScaler on the training data.
@@ -246,8 +263,10 @@ def _create_data_loaders(
     """Creates the data loaders for the given datasets.
 
     Args:
-        train_cross_val_dataset (dataset.StrokeBezierDataset): The cross validation training dataset.
-        train_single_val_dataset (dataset.StrokeBezierDataset): The single validation training dataset.
+        train_cross_val_dataset (dataset.StrokeBezierDataset): The cross validation
+            training dataset.
+        train_single_val_dataset (dataset.StrokeBezierDataset): The single validation
+            training dataset.
         val_1_dataset (dataset.StrokeBezierDataset): The first validation dataset.
         val_2_dataset (dataset.StrokeBezierDataset): The second validation dataset.
         test_dataset (dataset.StrokeBezierDataset): The test dataset.
@@ -611,12 +630,14 @@ def _test_model(
 
 def train_model(
     model_type: ModelType,
-    cross_validation: bool = False,
+    bezier_curve_degree: int,
+    cross_validation: bool,
 ) -> tuple[nn.Module, list[float], list[float], list[float], list[float]]:
     """Train and evaluate the given model on the training, validation and test datasets.
 
     Args:
         model_type (ModelType): The type of model to train.
+        bezier_curve_degree (int): The degree of the bezier curves.
         cross_validation (bool, optional): Whether to perform cross validation or not.
 
     Returns:
@@ -629,7 +650,10 @@ def train_model(
         val_1_dataset,
         val_2_dataset,
         test_dataset,
-    ) = _extract_load_datasets()
+    ) = _extract_load_datasets(
+        bezier_degree=bezier_curve_degree,
+        with_cross_val=cross_validation,
+    )
 
     print(
         f"Train Cross Val Dataset Size: {len(train_cross_val_dataset)}\n"
@@ -802,12 +826,16 @@ def train_model(
 
     # Save the trained model.
     torch.save(
-        model.state_dict(), f"models/{model_type.name.lower()}_model.ckpt"
+        model.state_dict(),
+        f"models/{model_type.name.lower()}_degree_{bezier_curve_degree}_cross_val_{cross_validation}_model.ckpt",
     )
 
     return model
 
 
 if __name__ == "__main__":
-    extraction.extract_all_data(BEZIER_CURVE_DEGREE)
-    train_model(model_type=ModelType.LSTM)
+    train_model(
+        model_type=ModelType.LSTM,
+        bezier_curve_degree=BEZIER_CURVE_DEGREE,
+        cross_validation=CROSS_VALIDATION,
+    )

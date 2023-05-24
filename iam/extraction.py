@@ -23,7 +23,7 @@ from bezier import BezierData, StrokeData
 LINE_STROKES_DATA_DIR = Path("datasets/IAM/lineStrokes")
 LINE_LABELS_DATA_DIR = Path("datasets/IAM/ascii")
 
-EXTRACTED_DATA_PATH = Path("data/new_iam_data.npz")
+EXTRACTED_DATA_TEMPLATE = "data/iam_data_{validation}_val_degree_{degree}.npz"
 
 
 class DatasetType(Enum):
@@ -36,6 +36,35 @@ class DatasetType(Enum):
     VAL_2 = Path("datasets/IAM/valset2.txt")
     TEST = Path("datasets/IAM/testset.txt")
     TRAIN_SINGLE_VAL = None  # Train and val_1 combined. Used during validation on single dataset.
+
+
+def get_extracted_data_file_path(
+    *, with_cross_val: bool, bezier_degree: int
+) -> Path:
+    """Gets the extracted data file path.
+
+    Args:
+        with_cross_val (bool): Whether cross validation is used.
+        bezier_degree (int): The bezier curve degree.
+
+    Returns:
+        The extracted data file path.
+    """
+    if not isinstance(with_cross_val, bool):
+        raise ValueError(
+            f"Invalid cross validation value: {with_cross_val}. Must be a boolean."
+        )
+    if not isinstance(bezier_degree, int):
+        raise ValueError(
+            f"Invalid bezier degree value: {bezier_degree}. Must be an integer."
+        )
+
+    return Path(
+        EXTRACTED_DATA_TEMPLATE.format(
+            validation="cross" if with_cross_val else "single",
+            degree=bezier_degree,
+        )
+    )
 
 
 def _get_line_from_labels_file(
@@ -491,7 +520,9 @@ def _convert_to_numpy_and_save(
     val_1_data: BezierData,
     val_2_data: BezierData,
     test_data: BezierData,
-):
+    with_cross_val: bool,
+    bezier_degree: int,
+) -> None:
     """Convert the data to numpy arrays.
 
     A larger training dataset (train_cross_val_data combined with
@@ -502,6 +533,11 @@ def _convert_to_numpy_and_save(
         val_1_data (BezierData): The first validation data.
         val_2_data (BezierData): The second validation data.
         test_data (BezierData): The test data.
+        with_cross_val (bool): Whether or not cross validation is being used.
+        bezier_degree (int): The degree of the Bezier curves.
+
+    Returns:
+        None.
 
     Raises:
         ValueError: If the data is invalid.
@@ -598,9 +634,13 @@ def _convert_to_numpy_and_save(
     # Create a data directory if it doesn't exist.
     Path("data").mkdir(parents=True, exist_ok=True)
 
+    extracted_data_file_path = get_extracted_data_file_path(
+        with_cross_val=with_cross_val, bezier_degree=bezier_degree
+    )
+
     # Save the data to a numpy .npz file.
     np.savez_compressed(
-        EXTRACTED_DATA_PATH,
+        extracted_data_file_path,
         train_cross_val_labels=train_cross_val_labels,
         train_cross_val_bezier_curves=train_cross_val_bezier_curves,
         val_1_labels=val_1_labels,
@@ -614,7 +654,11 @@ def _convert_to_numpy_and_save(
     )
 
 
-def extract_all_data(bezier_curve_degree: int = 3) -> None:
+def extract_all_data(
+    *,
+    with_cross_val: bool,
+    bezier_degree: int,
+) -> None:
     """Extract all data from the IAM On-Line Handwriting Database and save it to a numpy .npz file.
 
     This function processes the data and saves it in the following format:
@@ -636,11 +680,20 @@ def extract_all_data(bezier_curve_degree: int = 3) -> None:
             10. Pen-up flag (1 if the pen is up after the stroke, 0 if the pen is down).
 
     Args:
-        bezier_curve_degree: The degree of the Bezier curves to use. Defaults to 3.
+        with_cross_val: Whether cross validation is used.
+        bezier_degree: The degree of the Bezier curves to use.
 
     Returns:
         None. The data is saved to a numpy .npz file.
+
+    Raises:
+        TypeError: If bezier_curve_degree is not an int.
     """
+    if not isinstance(bezier_degree, int):
+        raise TypeError(
+            f"bezier_curve_degree must be an int, not {type(bezier_degree)}"
+        )
+
     (
         train_cross_val_data,
         val_1_data,
@@ -677,7 +730,7 @@ def extract_all_data(bezier_curve_degree: int = 3) -> None:
             # Compute the Bezier curves for the stroke file.
             bezier_curves_data = [
                 bezier.fit_stroke_with_bezier_curve(
-                    stroke=stroke, degree=bezier_curve_degree
+                    stroke=stroke, degree=bezier_degree
                 )
                 for stroke in strokes
             ]
@@ -700,4 +753,6 @@ def extract_all_data(bezier_curve_degree: int = 3) -> None:
         val_1_data=val_1_data,
         val_2_data=val_2_data,
         test_data=test_data,
+        bezier_degree=bezier_degree,
+        with_cross_val=with_cross_val,
     )
