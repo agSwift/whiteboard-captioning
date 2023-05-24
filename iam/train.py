@@ -33,7 +33,7 @@ BEZIER_CURVE_DEGREE = 5
 CROSS_VALIDATION = False
 REDUCTION = "mean"
 NUM_LAYERS = 3
-DROPOUT_RATE = 0.3
+DROPOUT_RATE = 0.2
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
 PATIENCE = 100
@@ -177,7 +177,9 @@ def _greedy_decode(indices: npt.NDArray[np.int_]) -> str:
         if idx not in INDEX_TO_CHAR:
             raise ValueError(f"Index {idx} not found in INDEX_TO_CHAR.")
 
-        curr_char = INDEX_TO_CHAR[idx]
+        curr_char = (
+            "" if idx == 0 else INDEX_TO_CHAR[idx]
+        )  # Ignore the epsilon character.
 
         if curr_char != prev_char:
             output.append(curr_char)
