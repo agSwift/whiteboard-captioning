@@ -22,6 +22,7 @@ from bezier import BezierData, StrokeData
 
 LINE_STROKES_DATA_DIR = Path("datasets/IAM/lineStrokes")
 LINE_LABELS_DATA_DIR = Path("datasets/IAM/ascii")
+LINE_IMAGES_DATA_DIR = Path("datasets/IAM/lineImages")
 
 EXTRACTED_DATA_TEMPLATE = "data/iam_data_{validation}_val_degree_{degree}.npz"
 
@@ -133,14 +134,15 @@ def _get_line_from_labels_file(
 
 def _get_label_from_stroke_file(
     stroke_file: Path,
-) -> tuple[Optional[str], str]:
+) -> tuple[Optional[str], str, Path]:
     """Gets the line label and the labels file name that the label belongs to.
 
     Args:
         stroke_file (Path): The stroke file path.
 
     Returns:
-        The line label and the label file name. None if the line label is not found.
+        The line label, the label file name, and the image file path.
+        None if the line label is not found.
 
     Raises:
         ValueError: If the stroke file is invalid.
@@ -166,13 +168,13 @@ def _get_label_from_stroke_file(
     stroke_file_name = stroke_file.stem  # e.g. a01-000u-01
 
     # Get the line label index.
-    line_label_idx = stroke_file_name[-2:]  # e.g. 01
-    if not line_label_idx.isdigit():
+    line_label_idx_chars = stroke_file_name[-2:]  # e.g. 01
+    if not line_label_idx_chars.isdigit():
         raise ValueError(
             f"Invalid stroke file: {stroke_file}. "
             f"Label line index must be a number."
         )
-    line_label_idx = int(line_label_idx)
+    line_label_idx = int(line_label_idx_chars)
 
     # Get the labels file directory and name.
     root_labels_dir = stroke_file_name[:3]  # e.g. a01
@@ -187,10 +189,19 @@ def _get_label_from_stroke_file(
         / f"{labels_file_name}.txt"
     )
 
+    image_file = (
+        LINE_IMAGES_DATA_DIR
+        / root_labels_dir
+        / sub_labels_dir
+        / f"{labels_file_name}-{line_label_idx_chars}.tif"
+    )
+    assert image_file.exists(), f"Image file not found: {image_file}."
+
     # Get the line label from the labels file.
     return (
         _get_line_from_labels_file(labels_file, line_label_idx),
         labels_file_name,
+        image_file,
     )
 
 
@@ -338,7 +349,7 @@ def _filter_and_get_stroke_file_paths(
     Returns:
         list[Path]: A list of pathlib.Path objects representing the stroke files.
     """
-    return sorted(
+    stroke_file_paths = [
         # Get the full path to the stroke file.
         Path(root) / Path(file)
         for file in stroke_files
@@ -353,7 +364,21 @@ def _filter_and_get_stroke_file_paths(
         and not file.startswith(
             "a08-551z-09"
         )  # Exclude files starting with "a08-551z-09".
+    ]
+
+    assert all(
+        not (
+            file.name.startswith("z01-000z")
+            and file.name.startswith("a08-551z-08")
+            and file.name.startswith("a08-551z-09")
+        )
+        for file in stroke_file_paths
+    ), (
+        "Invalid stroke files. "
+        'The stroke files must not start with "z01-000z", "a08-551z-08", or "a08-551z-09".'
     )
+
+    return stroke_file_paths
 
 
 def _set_up_train_val_test_data_stores() -> (
@@ -664,8 +689,9 @@ def extract_all_data(
     This function processes the data and saves it in the following format:
     - labels: a list of strings, where each string represents a line label from the database.
 
-    - bezier_data: a 2D numpy array with shape (number_of_strokes, num_bezier_curve_features), where each row
-        represents the Bezier curve information of a stroke. The columns contain the following:
+    - bezier_data: a 2D numpy array with shape (number_of_strokes, num_bezier_curve_features),
+        where each row represents the Bezier curve information of a stroke. The columns
+        contain the following:
             1. x difference of the end points.
             2. y difference of the end points.
             3. Distance between the first control point and the starting point,
@@ -718,14 +744,24 @@ def extract_all_data(
         # Go through each stroke file in the directory.
         for stroke_file in stroke_files:
             # Get the label for the stroke file.
-            line_label, labels_file_name = _get_label_from_stroke_file(
-                stroke_file
-            )
+            (
+                line_label,
+                labels_file_name,
+                label_image_file,
+            ) = _get_label_from_stroke_file(stroke_file)
             if line_label is None:
                 break
 
             # Get the strokes from the stroke file.
             strokes = _get_strokes_from_stroke_file(stroke_file)
+
+            if labels_file_name.startswith("p10-305z"):
+                _display_label_data(
+                    line_label=line_label,
+                    labels_file_name=labels_file_name,
+                    label_image_file=label_image_file,
+                    num_strokes=len(strokes),
+                )
 
             # Compute the Bezier curves for the stroke file.
             bezier_curves_data = [
