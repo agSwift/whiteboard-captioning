@@ -47,6 +47,47 @@ def is_valid_bezier_data(data: BezierData) -> None:
         )
 
 
+def append_label_bezier_curves_data(
+    *,
+    label: str,
+    labels_file_name: str,
+    bezier_curves_data: list[npt.NDArray[np.float_]],
+    train_cross_val_data: BezierData,
+    val_1_data: BezierData,
+    val_2_data: BezierData,
+    test_data: BezierData,
+) -> None:
+    """Append the label and Bezier curves data to the appropriate dataset.
+
+    The data will not be appended if the label file name is not in any of the datasets.
+
+    Args:
+        label (str): The label of the stroke file.
+        labels_file_name (str): The name of the labels file.
+        bezier_curves_data (list[npt.NDArray[np.float_]]): A list of 2D numpy arrays containing
+            Bezier curve information for each stroke in the stroke file.
+        train_cross_val_data (BezierData): The train dataset used for cross validation.
+        val_1_data (BezierData): The first validation dataset.
+        val_2_data (BezierData): The second validation dataset.
+        test_data (BezierData): The test dataset.
+
+    Returns:
+        None.
+    """
+    if labels_file_name in train_cross_val_data.label_file_names:
+        train_cross_val_data.labels.append(label)
+        train_cross_val_data.bezier_curves_data.append(bezier_curves_data)
+    elif labels_file_name in val_1_data.label_file_names:
+        val_1_data.labels.append(label)
+        val_1_data.bezier_curves_data.append(bezier_curves_data)
+    elif labels_file_name in val_2_data.label_file_names:
+        val_2_data.labels.append(label)
+        val_2_data.bezier_curves_data.append(bezier_curves_data)
+    elif labels_file_name in test_data.label_file_names:
+        test_data.labels.append(label)
+        test_data.bezier_curves_data.append(bezier_curves_data)
+
+
 def pad_bezier_curves_data(
     all_bezier_curves_data: list[npt.NDArray[np.float_]],
 ) -> npt.NDArray[np.float_]:
