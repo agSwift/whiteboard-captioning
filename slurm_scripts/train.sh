@@ -11,5 +11,5 @@ TERM=vt100
 /usr/bin/nvidia-smi
 uptime
 
-cd /vol/bitbucket/ag2719/drawing-gui/ && srun python ./iam/train.py
+cd /vol/bitbucket/ag2719/drawing-gui/ && srun python .backend/iam/train.py
 

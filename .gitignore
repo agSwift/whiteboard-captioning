@@ -5,4 +5,5 @@ __pycache__/
 wandb/
 .DS_Store
 slurm_outputs/
+.env
 ```
