@@ -19,9 +19,9 @@ from tqdm import tqdm
 
 from iam import bezier_curves
 
-LINE_STROKES_DATA_DIR = Path("datasets/IAM/lineStrokes")
-LINE_LABELS_DATA_DIR = Path("datasets/IAM/ascii")
-LINE_IMAGES_DATA_DIR = Path("datasets/IAM/lineImages")
+LINE_STROKES_DATA_DIR = Path("backend/datasets/IAM/lineStrokes")
+LINE_LABELS_DATA_DIR = Path("backend/datasets/IAM/ascii")
+LINE_IMAGES_DATA_DIR = Path("backend/datasets/IAM/lineImages")
 
 EXTRACTED_DATA_TEMPLATE = "iam_data_{validation}_val_degree_{degree}"
 
@@ -30,11 +30,11 @@ class DatasetType(Enum):
     """An enum for the dataset types."""
 
     TRAIN_CROSS_VAL = Path(
-        "datasets/IAM/trainset.txt"
+        "backend/datasets/IAM/trainset.txt"
     )  # Used during cross validation.
-    VAL_1 = Path("datasets/IAM/valset1.txt")
-    VAL_2 = Path("datasets/IAM/valset2.txt")
-    TEST = Path("datasets/IAM/testset.txt")
+    VAL_1 = Path("backend/datasets/IAM/valset1.txt")
+    VAL_2 = Path("backend/datasets/IAM/valset2.txt")
+    TEST = Path("backend/datasets/IAM/testset.txt")
     TRAIN_SINGLE_VAL = None  # Train and val_1 combined. Used during validation on single dataset.
 
 
@@ -64,7 +64,7 @@ def get_extracted_data_file_path(
         degree=bezier_degree,
     )
 
-    return Path(f"iam/data/{extracted_data_file_name}.npz")
+    return Path(f"backend/iam/data/{extracted_data_file_name}.npz")
 
 
 def _get_line_from_labels_file(
@@ -623,7 +623,7 @@ def _convert_to_numpy_and_save(
     )
 
     # Create a data directory if it doesn't exist.
-    Path("iam/data").mkdir(parents=True, exist_ok=True)
+    Path("backend/iam/data").mkdir(parents=True, exist_ok=True)
 
     extracted_data_file_path = get_extracted_data_file_path(
         with_cross_val=with_cross_val, bezier_degree=bezier_degree
@@ -723,6 +723,9 @@ def extract_all_data(
 
             # Compute the Bezier curves for the stroke file.
             bezier_curves_data = [
+                # bezier_curves.fit_stroke_with_cubic_bezier_curve_scipy(
+                #     stroke=stroke
+                # )
                 bezier_curves.fit_stroke_with_bezier_curve(
                     stroke=stroke, degree=bezier_degree
                 )

@@ -859,7 +859,7 @@ def train_model(
     )
 
     # Create a models directory if it doesn't exist.
-    Path("iam/models").mkdir(parents=True, exist_ok=True)
+    Path("backend/iam/models").mkdir(parents=True, exist_ok=True)
 
     trained_model_file_name = get_model_file_name(
         model_name=model_type.name.lower(),
@@ -871,7 +871,7 @@ def train_model(
     # Save the trained model.
     torch.save(
         model.state_dict(),
-        f"iam/models/{trained_model_file_name}.ckpt",
+        f"backend/iam/models/{trained_model_file_name}.ckpt",
     )
 
     return model

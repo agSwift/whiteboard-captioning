@@ -16,7 +16,7 @@ def _load_models():
     for model_name in ALL_MODEL_NAMES:
         for bezier_curve_degree in ALL_BEZIER_CURVE_DEGREES:
             for num_layers in ALL_NUM_LAYERS:
-                for bidirectional in [True]:
+                for bidirectional in [True, False]:
                     # Create the model file name.
                     model_file_name = train.get_model_file_name(
                         model_name=model_name.lower(),
@@ -26,7 +26,9 @@ def _load_models():
                     )
 
                     # Ensure the model exists.
-                    model_path = Path(f"iam/models/{model_file_name}.ckpt")
+                    model_path = Path(
+                        f"backend/iam/models/{model_file_name}.ckpt"
+                    )
                     assert model_path.exists(), (
                         f"Model {model_file_name} does not exist.\n"
                         "Run train.py to train the model."

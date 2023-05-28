@@ -12,5 +12,5 @@ TERM=vt100
 uptime
 
 export PYTHONPATH=$PYTHONPATH:/vol/bitbucket/ag2719/drawing-gui/backend
-cd /vol/bitbucket/ag2719/drawing-gui/ && srun python .backend/iam/train.py
+cd /vol/bitbucket/ag2719/drawing-gui/ && srun python backend/iam/train.py
 
