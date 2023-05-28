@@ -1,25 +1,27 @@
+"""Used for loading trained models and predicting the characters in a stroke."""
 from functools import lru_cache
 from pathlib import Path
+import numpy as np
 import torch
 
-from iam import bezier_curves, train
+from iam import bezier_curves, dataset, extraction, train
 
 ALL_NUM_LAYERS = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 ALL_BEZIER_CURVE_DEGREES = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-ALL_MODEL_NAMES = [model_type.name for model_type in train.ModelType]
+ALL_MODEL_TYPES = list(train.ModelType)
 
 
 @lru_cache(maxsize=1)
 def _load_models():
     loaded_models = {}
 
-    for model_name in ALL_MODEL_NAMES:
+    for model_type in ALL_MODEL_TYPES:
         for bezier_curve_degree in ALL_BEZIER_CURVE_DEGREES:
             for num_layers in ALL_NUM_LAYERS:
                 for bidirectional in [True, False]:
                     # Create the model file name.
                     model_file_name = train.get_model_file_name(
-                        model_name=model_name.lower(),
+                        model_name=model_type.name.lower(),
                         bezier_curve_degree=bezier_curve_degree,
                         num_layers=num_layers,
                         bidirectional=bidirectional,
@@ -34,8 +36,40 @@ def _load_models():
                         "Run train.py to train the model."
                     )
 
+                    # Get the bezier curve dimension for the model.
+                    extracted_data_path = (
+                        extraction.get_extracted_data_file_path(
+                            with_cross_val=train.CROSS_VALIDATION,
+                            bezier_degree=bezier_curve_degree,
+                        )
+                    )
+                    assert (
+                        extracted_data_path.exists()
+                    ), f"Extracted data {extracted_data_path} does not exist.\n"
+                    all_bezier_data = np.load(extracted_data_path)
+
+                    train_cross_val_dataset = dataset.StrokeBezierDataset(
+                        all_bezier_data=all_bezier_data,
+                        dataset_type=extraction.DatasetType.TRAIN_CROSS_VAL,
+                    )
+                    bezier_curve_dimension = (
+                        train_cross_val_dataset.all_bezier_curves[0].shape[-1]
+                    )
+
                     # Load the model.
-                    loaded_models[model_file_name] = torch.load(model_path)
+                    model = model_type.value(
+                        bezier_curve_dimension=bezier_curve_dimension,
+                        hidden_size=train.HIDDEN_SIZE,
+                        num_classes=train.NUM_CLASSES,
+                        num_layers=num_layers,
+                        dropout=train.DROPOUT_RATE,
+                        bidirectional=bidirectional,
+                        device=train.DEVICE,
+                    ).to(train.DEVICE)
+                    model.load_state_dict(torch.load(model_path))
+
+                    # Add the model to the dictionary.
+                    loaded_models[model_file_name] = model
 
     return loaded_models
 
@@ -125,10 +159,10 @@ def greedy_predict(
         AssertionError: If any y point is not between 0 and 1.
         AssertionError: If the model does not exist.
     """
-    if model_name not in ALL_MODEL_NAMES:
+    if model_name not in [model_type.name for model_type in train.ModelType]:
         raise ValueError(
             f"Invalid model name: {model_name}\n"
-            f"Must be one of: {ALL_MODEL_NAMES}"
+            f"Valid model names: {[model_type.name for model_type in train.ModelType]}"
         )
 
     # Parse the strokes into bezier_curves.StrokeData objects.
@@ -162,12 +196,18 @@ def greedy_predict(
         all_stroke_data.append(stroke_data)
 
     # Fit bezier curves to the strokes.
-    bezier_curves_data = [
-        bezier_curves.fit_stroke_with_bezier_curve(
-            stroke=stroke_data, degree=bezier_curve_degree
-        )
-        for stroke_data in all_stroke_data
-    ]
+    bezier_curves_data = np.array(
+        [
+            bezier_curves.fit_stroke_with_bezier_curve(
+                stroke=stroke_data, degree=bezier_curve_degree
+            )
+            for stroke_data in all_stroke_data
+        ]
+    )
+
+    # Convert the bezier curves data to a tensor.
+    bezier_curves_data = torch.tensor(bezier_curves_data, dtype=torch.float32)
+    bezier_curves_data = bezier_curves_data.permute(1, 0, 2)
 
     # Load the required pytorch model.
     trained_model_file_name = train.get_model_file_name(
@@ -176,7 +216,6 @@ def greedy_predict(
         num_layers=num_layers,
         bidirectional=bidirectional,
     )
-
     assert trained_model_file_name in LOADED_MODELS, (
         f"Model {trained_model_file_name} does not exist.\n"
         "Please run train.py to train the model."
@@ -188,4 +227,6 @@ def greedy_predict(
 
     # Convert logits to characters.
     greedy_prediction = logits.argmax(2).detach().cpu().numpy().T
+    greedy_prediction = greedy_prediction.squeeze(-1)
+
     return train.greedy_decode(greedy_prediction)
