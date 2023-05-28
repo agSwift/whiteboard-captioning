@@ -4,8 +4,9 @@ from enum import Enum
 from pathlib import Path
 import numpy as np
 import numpy.typing as npt
+import multiprocessing
 
-from pyctcdecode import build_ctcdecoder
+# from pyctcdecode import build_ctcdecoder
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
@@ -14,6 +15,7 @@ from torch.utils.data import DataLoader
 
 from iam import extraction, dataset, rnn
 
+from ctcdecode import CTCBeamDecoder
 from jiwer import cer, wer
 import wandb
 
@@ -22,23 +24,36 @@ INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 
 # Hyperparameters.
 BATCH_SIZE = 32
-NUM_EPOCHS = 300
+NUM_EPOCHS = 200
 HIDDEN_SIZE = 256
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
 BEZIER_CURVE_DEGREE = 5
 CROSS_VALIDATION = False
 REDUCTION = "mean"
 NUM_LAYERS = 3
-DROPOUT_RATE = 0.2
+DROPOUT_RATE = 0.3
 BIDIRECTIONAL = True
-LEARNING_RATE = 3e-4
-PATIENCE = 100
+LEARNING_RATE = 0.5e-3
+PATIENCE = 50
 BEAM_WIDTH = 10
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# TODO: Add new decoder or fix CTC decoding.
-DECODER = build_ctcdecoder(
-    labels=[INDEX_TO_CHAR.get(i) for i in range(1, NUM_CLASSES)],
+# # TODO: Add new decoder or fix CTC decoding.
+# DECODER = build_ctcdecoder(
+#    labels=[INDEX_TO_CHAR.get(i) for i in range(1, NUM_CLASSES)],
+# )
+
+DECODER = CTCBeamDecoder(
+    [INDEX_TO_CHAR.get(i) for i in range(NUM_CLASSES)],
+    model_path=None,
+    alpha=0,
+    beta=0,
+    cutoff_top_n=40,
+    cutoff_prob=1.0,
+    beam_width=10,
+    num_processes=multiprocessing.cpu_count(),
+    blank_id=0,
+    log_probs_input=False
 )
 
 
@@ -464,9 +479,21 @@ def _validate_epoch(
             #     for prediction in beam_predictions
             # ]
 
+            # Transform from shape (seq_len, batch_size, feature_dim) to
+            # (batch_size, seq_len, feature_dim).
+            beam_predictions = logits.detach().cpu().transpose(0, 1)
+            beam_results, _, _, _ = DECODER.decode(probs=beam_predictions)
+
+            # Get the top beam results.
+            beam_results = beam_results[:, 0, :]
+
+            beam_decodings = []
+            for beam_result in beam_results:
+                beam_decodings.append("".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result]))
+
             # Calculate the CERs and WERs for the current batch.
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
-                zip(labels_to_strings, greedy_decodings, ["beam"])
+                zip(labels_to_strings, greedy_decodings, beam_decodings)
             ):
                 num_samples += 1
 
@@ -597,8 +624,20 @@ def _test_model(
             #     for prediction in beam_predictions
             # ]
 
+            # Transform from shape (seq_len, batch_size, feature_dim) to
+            # (batch_size, seq_len, feature_dim).
+            beam_predictions = logits.detach().cpu().transpose(0, 1)
+            beam_results, _, _, _ = DECODER.decode(probs=beam_predictions)
+
+            # Get the top beam results.
+            beam_results = beam_results[:, 0, :]
+
+            beam_decodings = []
+            for beam_result in beam_results:
+                beam_decodings.append("".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result]))
+
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
-                zip(labels_to_strings, greedy_decodings, ["beam"])
+                zip(labels_to_strings, greedy_decodings, beam_decodings)
             ):
                 num_samples += 1
 
