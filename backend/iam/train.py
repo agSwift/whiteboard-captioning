@@ -35,7 +35,7 @@ DROPOUT_RATE = 0.3
 BIDIRECTIONAL = True
 LEARNING_RATE = 0.5e-3
 PATIENCE = 50
-BEAM_WIDTH = 10
+BEAM_WIDTH = 4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # # TODO: Add new decoder or fix CTC decoding.
@@ -50,7 +50,7 @@ DECODER = CTCBeamDecoder(
     beta=0,
     cutoff_top_n=40,
     cutoff_prob=1.0,
-    beam_width=10,
+    beam_width=BEAM_WIDTH,
     num_processes=multiprocessing.cpu_count(),
     blank_id=0,
     log_probs_input=False
@@ -482,13 +482,17 @@ def _validate_epoch(
             # Transform from shape (seq_len, batch_size, feature_dim) to
             # (batch_size, seq_len, feature_dim).
             beam_predictions = logits.detach().cpu().transpose(0, 1)
-            beam_results, _, _, _ = DECODER.decode(probs=beam_predictions)
+            beam_results, _, _, _ = DECODER.decode(beam_predictions, target_lengths)
 
             # Get the top beam results.
-            beam_results = beam_results[:, 0, :]
+            top_beam_results = []
+            for i in range(len(beam_results)):
+                target_length = target_lengths[i]
+                top_beam_result = beam_results[i, 0, :target_length]
+                top_beam_results.append(top_beam_result)
 
             beam_decodings = []
-            for beam_result in beam_results:
+            for beam_result in top_beam_results:
                 beam_decodings.append("".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result]))
 
             # Calculate the CERs and WERs for the current batch.
@@ -496,6 +500,8 @@ def _validate_epoch(
                 zip(labels_to_strings, greedy_decodings, beam_decodings)
             ):
                 num_samples += 1
+
+                assert len(label) == len(beam_decoding)
 
                 # Calculate the CERs and WERs for the current sample.
                 greedy_cer = cer(label, greedy_decoding)
@@ -542,7 +548,7 @@ def _test_model(
     """Tests the model on the given test dataset.
 
     Args:
-        model (nn.Module): The model to test.
+        model (nn.Module): The model tassert(len(label) == len(beam_decoding))o test.
         criterion (nn.CTCLoss): The CTC loss function.
         test_loader (DataLoader): The test data loader.
 
@@ -630,16 +636,21 @@ def _test_model(
             beam_results, _, _, _ = DECODER.decode(probs=beam_predictions)
 
             # Get the top beam results.
-            beam_results = beam_results[:, 0, :]
+            top_beam_results = []
+            for i in range(len(beam_results)):
+                target_length = target_lengths[i]
+                top_beam_result = beam_results[i, 0, :target_length]
+                top_beam_results.append(top_beam_result)
 
             beam_decodings = []
-            for beam_result in beam_results:
+            for beam_result in top_beam_results:
                 beam_decodings.append("".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result]))
 
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
                 zip(labels_to_strings, greedy_decodings, beam_decodings)
             ):
                 num_samples += 1
+                assert len(beam_decoding) == len(label)
 
                 # Calculate the CERs and WERs for the current sample.
                 greedy_cer = cer(label, greedy_decoding)
