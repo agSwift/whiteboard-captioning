@@ -1,10 +1,10 @@
 """For training models on the IAM dataset."""
 import copy
+import multiprocessing
 from enum import Enum
 from pathlib import Path
 import numpy as np
 import numpy.typing as npt
-import multiprocessing
 
 # from pyctcdecode import build_ctcdecoder
 import torch
@@ -33,7 +33,7 @@ REDUCTION = "mean"
 NUM_LAYERS = 3
 DROPOUT_RATE = 0.3
 BIDIRECTIONAL = True
-LEARNING_RATE = 0.5e-3
+LEARNING_RATE = 1e-3
 PATIENCE = 50
 BEAM_WIDTH = 4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -53,7 +53,7 @@ DECODER = CTCBeamDecoder(
     beam_width=BEAM_WIDTH,
     num_processes=multiprocessing.cpu_count(),
     blank_id=0,
-    log_probs_input=False
+    log_probs_input=True,
 )
 
 
@@ -482,7 +482,9 @@ def _validate_epoch(
             # Transform from shape (seq_len, batch_size, feature_dim) to
             # (batch_size, seq_len, feature_dim).
             beam_predictions = logits.detach().cpu().transpose(0, 1)
-            beam_results, _, _, _ = DECODER.decode(beam_predictions, target_lengths)
+            beam_results, _, _, _ = DECODER.decode(
+                beam_predictions, target_lengths
+            )
 
             # Get the top beam results.
             top_beam_results = []
@@ -491,9 +493,10 @@ def _validate_epoch(
                 top_beam_result = beam_results[i, 0, :target_length]
                 top_beam_results.append(top_beam_result)
 
-            beam_decodings = []
-            for beam_result in top_beam_results:
-                beam_decodings.append("".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result]))
+            beam_decodings = [
+                "".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result])
+                for beam_result in top_beam_results
+            ]
 
             # Calculate the CERs and WERs for the current batch.
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
@@ -642,9 +645,10 @@ def _test_model(
                 top_beam_result = beam_results[i, 0, :target_length]
                 top_beam_results.append(top_beam_result)
 
-            beam_decodings = []
-            for beam_result in top_beam_results:
-                beam_decodings.append("".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result]))
+            beam_decodings = [
+                "".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result])
+                for beam_result in top_beam_results
+            ]
 
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
                 zip(labels_to_strings, greedy_decodings, beam_decodings)
