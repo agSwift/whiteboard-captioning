@@ -11,5 +11,6 @@ TERM=vt100
 /usr/bin/nvidia-smi
 uptime
 
+export PYTHONPATH=$PYTHONPATH:/vol/bitbucket/ag2719/drawing-gui/backend
 cd /vol/bitbucket/ag2719/drawing-gui/ && srun python .backend/iam/train.py
 
