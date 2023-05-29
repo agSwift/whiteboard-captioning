@@ -6,9 +6,13 @@ import torch
 
 from iam import bezier_curves, dataset, extraction, train
 
-ALL_NUM_LAYERS = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-ALL_BEZIER_CURVE_DEGREES = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-ALL_MODEL_TYPES = list(train.ModelType)
+# ALL_NUM_LAYERS = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+# ALL_BEZIER_CURVE_DEGREES = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+# ALL_MODEL_TYPES = list(train.ModelType)
+ALL_NUM_LAYERS = [3]
+ALL_BEZIER_CURVE_DEGREES = [5]
+ALL_MODEL_TYPES = [train.ModelType.LSTM]
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 @lru_cache(maxsize=1)
@@ -18,7 +22,7 @@ def _load_models():
     for model_type in ALL_MODEL_TYPES:
         for bezier_curve_degree in ALL_BEZIER_CURVE_DEGREES:
             for num_layers in ALL_NUM_LAYERS:
-                for bidirectional in [True, False]:
+                for bidirectional in [True]:
                     # Create the model file name.
                     model_file_name = train.get_model_file_name(
                         model_name=model_type.name.lower(),
@@ -64,8 +68,8 @@ def _load_models():
                         num_layers=num_layers,
                         dropout=train.DROPOUT_RATE,
                         bidirectional=bidirectional,
-                        device=train.DEVICE,
-                    ).to(train.DEVICE)
+                        device=DEVICE,
+                    ).to(DEVICE)
                     model.load_state_dict(torch.load(model_path))
 
                     # Add the model to the dictionary.
@@ -77,12 +81,14 @@ def _load_models():
 LOADED_MODELS = _load_models()
 
 
-def _parse_stroke(stroke: list[dict[str, float]]) -> bezier_curves.StrokeData:
+def _parse_stroke(*, stroke: list[dict[str, float]], bezier_curve_degree: int, points_per_second: int = 20) -> bezier_curves.StrokeData:
     """Parse a stroke into a bezier_curves.StrokeData object.
 
     Args:
         stroke (list[dict[str, float]]): A stroke, which is a list of points.
             Each point is a dictionary with keys "x", "y", and "time".
+        bezier_curve_degree (int): The degree of the bezier curves to fit to the strokes.
+        points_per_second (int): The number of points to keep per second.
 
     Returns:
         bezier_curves.StrokeData: A bezier_curves.StrokeData object.
@@ -94,20 +100,21 @@ def _parse_stroke(stroke: list[dict[str, float]]) -> bezier_curves.StrokeData:
     y_points = []
     time_stamps = []
     pen_ups = []
-    fst_timestamp = 0
 
-    for i, point in enumerate(stroke):
+    total_time = stroke[-1]['time'] - stroke[0]['time']
+    total_points = int(total_time * points_per_second)
+
+    # Ensure total points is a multiple of bezier_curve_degree + 1
+    total_points = total_points - (total_points % (bezier_curve_degree + 1))
+    indices_to_keep = np.linspace(0, len(stroke)-1, total_points, dtype=int)
+
+    for i in indices_to_keep:
+        point = stroke[i]
         x_points.append(point["x"])
         y_points.append(point["y"])
+        time_stamps.append(point["time"])
 
-        if not time_stamps:
-            # Ensure first time stamp is 0, not the actual time stamp.
-            fst_timestamp = point["time"]
-            time_stamps.append(0)
-        else:
-            time_stamps.append(point["time"] - fst_timestamp)
-
-        if i == len(stroke) - 1:
+        if i == indices_to_keep[-1]:
             # If this is the last point in the stroke, the pen is up.
             pen_ups.append(1)
         else:
@@ -169,7 +176,7 @@ def greedy_predict(
     all_stroke_data = []
 
     for stroke in strokes:
-        stroke_data = _parse_stroke(stroke)
+        stroke_data = _parse_stroke(stroke=stroke, bezier_curve_degree=bezier_curve_degree)
 
         # Normalise the stroke data.
         min_x = min(stroke_data.x_points)
@@ -207,7 +214,7 @@ def greedy_predict(
 
     # Convert the bezier curves data to a tensor.
     bezier_curves_data = torch.tensor(bezier_curves_data, dtype=torch.float32)
-    bezier_curves_data = bezier_curves_data.permute(1, 0, 2)
+    bezier_curves_data = bezier_curves_data.permute(1, 0, 2).to(DEVICE)
 
     # Load the required pytorch model.
     trained_model_file_name = train.get_model_file_name(

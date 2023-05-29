@@ -1,7 +1,4 @@
-import { useEffect, useRef, useState } from "react"; 
-import Slider from '@mui/material/Slider';
-import Typography from '@mui/material/Typography';
-import { Switch } from "@mui/material";
+import React, { useEffect, useRef, useState } from "react"; 
 
 const BACKEND_URL = 'http://127.0.0.1:5000/';
 const PREDICTION_MODELS = ['RNN', 'LSTM', 'GRU'];
@@ -17,18 +14,25 @@ function App() {
 
     const [strokes, setStrokes] = useState([]);
     const [maxY, setMaxY] = useState(0);
-    const [selectedModel, setSelectedModel] = useState(PREDICTION_MODELS[0]);
-    const [bezierCurveDegree, setBezierCurveDegree] = useState(1);
-    const [numLayers, setNumLayers] = useState(1);
-    const [bidirectional, setBidirectional] = useState(false);
+    const [maxX, setMaxX] = useState(0);
+    const [selectedModel, setSelectedModel] = useState(PREDICTION_MODELS[1]);
+    const [bezierCurveDegree, setBezierCurveDegree] = useState(5);
+    const [numLayers, setNumLayers] = useState(3);
+    const [bidirectional, setBidirectional] = useState(true);
+
+    
     
     useEffect(() => {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext("2d");
-        canvas.width = window.innerWidth * 0.75;
         const maxY = window.innerHeight / 2
+        const maxX = window.innerWidth * 0.75;
+
         canvas.height = maxY;
+        canvas.width = maxX;
+
         setMaxY(maxY);
+        setMaxX(maxX);
         setCanvasContext(ctx);
     }, [canvasRef]);
 
@@ -44,8 +48,8 @@ function App() {
             'strokes': strokes,
             'max_y': maxY,
             'model_name': selectedModel,
-            'bezier_curve_degree': bezierCurveDegree,
-            'num_layers': numLayers,
+            'bezier_curve_degree': parseInt(bezierCurveDegree),
+            'num_layers': parseInt(numLayers),
             'bidirectional': bidirectional,
         }
 
@@ -60,7 +64,7 @@ function App() {
         }).then(async (response)=>{
             const body = await response.json();
             console.log(body);
-            setPredictedText(body);
+            setPredictedText(body.prediction);
         }).catch(console.log);
     }
 
@@ -104,7 +108,11 @@ function App() {
         ctx.stroke();
 
         // Add moved to point
-        newPoints[newPoints.length-1].push({x: e.clientX, y: e.clientY, time: Date.now() / 1000})
+        const coordPointX =  canvasEventPosition.x
+        const coordPointY =  maxY - canvasEventPosition.y //html Y is top down, we need Y as bottom to top
+        if(coordPointX >= 0 && coordPointX <= maxX && coordPointY >=0 && coordPointY <= maxY) {
+            newPoints[newPoints.length-1].push({x: coordPointX, y: coordPointY, time: Date.now() / 1000})
+        }
 
         // Update all the points
         setStrokes(newPoints)
@@ -183,29 +191,37 @@ function App() {
             </div>
             <div style={divStyle}>
                 <div style={{width: "100%", padding: '0 20px'}}>
-                    <Slider
+                    <input
+                        type="range"
                         step={1}
                         valueLabelDisplay="on"
                         max={9}
                         value={bezierCurveDegree}
-                        onChange={(_,v) => setBezierCurveDegree(v)}
+                        onChange={(e)=>setBezierCurveDegree(e.target.value)}
                         />
-                    <Typography gutterBottom>Bezier Curve Degree</Typography>
+                    <p>Bezier Curve Degree: {String(bezierCurveDegree)} </p>
                 </div>
                 <div style={{width: "100%", padding: '0 20px'}}>
-                    <Slider
-                        aria-label="Custom marks"
+                <input
+                        type="range"
                         step={1}
                         valueLabelDisplay="on"
                         max={9}
                         value={numLayers}
-                        onChange={(_,v) => setNumLayers(v)}
+                        onChange={(e)=>setNumLayers(e.target.value)}
                         />
-                    <Typography gutterBottom>Number of Layers</Typography>
+                    <p>Number of Layers: {String(numLayers)} </p>
                 </div>
                 <div style={{width: "100%", padding: '0 20px', alignItems: "center", justifyContent: "center"}}>
-                    <Switch value={bidirectional} onChange={(_,v)=>setBidirectional(v)}/>
-                    <Typography gutterBottom>Bidirectional?</Typography>
+                <input
+                        type="range"
+                        step={0}
+                        valueLabelDisplay="on"
+                        max={1}
+                        value={bidirectional ? 1: 0}
+                        onChange={(e)=>setBidirectional(e.target.value==1)}
+                        />
+                    <p>Bidirectional: {String(bidirectional)} </p>
                 </div>
             </div>
         </div>

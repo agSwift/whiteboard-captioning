@@ -342,7 +342,7 @@ def fit_stroke_with_bezier_curve(
     )
 
     # Plot the stroke data and the Bezier curve.
-    # _plot_stroke_and_bezier_curve(stroke, bezier_control_points)
+    _plot_stroke_and_bezier_curve(stroke, bezier_control_points)
 
     # Compute the distance between end points (first and last control points).
     end_point_diff = np.array(

@@ -48,7 +48,7 @@ DECODER = CTCBeamDecoder(
     model_path=None,
     alpha=0,
     beta=0,
-    cutoff_top_n=40,
+    cutoff_top_n=100,
     cutoff_prob=1.0,
     beam_width=BEAM_WIDTH,
     num_processes=multiprocessing.cpu_count(),
@@ -482,9 +482,17 @@ def _validate_epoch(
             # Transform from shape (seq_len, batch_size, feature_dim) to
             # (batch_size, seq_len, feature_dim).
             beam_predictions = logits.detach().cpu().transpose(0, 1)
+            print('beam_predictions.type', beam_predictions.dtype)
+
+            print('beam_predictions.shape', beam_predictions.shape)
+            print('target_lengths.shape', target_lengths.shape)
+            print('target_lengths', target_lengths)
+
             beam_results, _, _, _ = DECODER.decode(
-                beam_predictions, target_lengths
+                beam_predictions
             )
+
+            print('beam_results.shape', beam_results.shape)
 
             # Get the top beam results.
             top_beam_results = []
@@ -493,10 +501,17 @@ def _validate_epoch(
                 top_beam_result = beam_results[i, 0, :target_length]
                 top_beam_results.append(top_beam_result)
 
+                # print('target_length', target_length)
+                print('top_beam_result.shape', top_beam_result.shape)
+                # print('top_beam_result', top_beam_result)
+                # print()
+                # print()
+            
             beam_decodings = [
                 "".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result])
                 for beam_result in top_beam_results
             ]
+            exit()
 
             # Calculate the CERs and WERs for the current batch.
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
@@ -636,7 +651,7 @@ def _test_model(
             # Transform from shape (seq_len, batch_size, feature_dim) to
             # (batch_size, seq_len, feature_dim).
             beam_predictions = logits.detach().cpu().transpose(0, 1)
-            beam_results, _, _, _ = DECODER.decode(probs=beam_predictions)
+            beam_results, _, _, _ = DECODER.decode(beam_predictions, target_lengths)
 
             # Get the top beam results.
             top_beam_results = []
