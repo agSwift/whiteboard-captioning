@@ -109,10 +109,11 @@ function App() {
 
         // Add moved to point
         const coordPointX =  canvasEventPosition.x
-        const coordPointY =  maxY - canvasEventPosition.y //html Y is top down, we need Y as bottom to top
+        const coordPointY =  canvasEventPosition.y //html Y is top down, we need Y as bottom to top
         if(coordPointX >= 0 && coordPointX <= maxX && coordPointY >=0 && coordPointY <= maxY) {
             newPoints[newPoints.length-1].push({x: coordPointX, y: coordPointY, time: Date.now() / 1000})
         }
+        console.log(JSON.stringify({x: coordPointX, y: coordPointY}))
 
         // Update all the points
         setStrokes(newPoints)
@@ -167,6 +168,9 @@ function App() {
                     }}
                 ></canvas>
             </div>
+            <div style={divStyle}>
+                <button onClick={SendData} style={{backgroundColor: 'lightyellow', fontWeight: 'bolder'}}>PRESS TO PREDICT</button>
+            </div>
             <div
                 style={{
                 ...divStyle,
@@ -178,9 +182,6 @@ function App() {
                 }}
             >
                 {predictedText}
-            </div>
-            <div style={divStyle}>
-                <button onClick={SendData} style={{backgroundColor: 'lightyellow', fontWeight: 'bolder'}}>PRESS TO PREDICT</button>
             </div>
             <div
                 style={{

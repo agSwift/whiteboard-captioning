@@ -81,7 +81,7 @@ def _load_models():
 LOADED_MODELS = _load_models()
 
 
-def _parse_stroke(*, stroke: list[dict[str, float]], bezier_curve_degree: int, points_per_second: int = 20) -> bezier_curves.StrokeData:
+def _parse_stroke(stroke: list[dict[str, float]], bezier_curve_degree: int, points_per_second: int = 25) -> bezier_curves.StrokeData:
     """Parse a stroke into a bezier_curves.StrokeData object.
 
     Args:
@@ -104,8 +104,13 @@ def _parse_stroke(*, stroke: list[dict[str, float]], bezier_curve_degree: int, p
     total_time = stroke[-1]['time'] - stroke[0]['time']
     total_points = int(total_time * points_per_second)
 
-    # Ensure total points is a multiple of bezier_curve_degree + 1
-    total_points = total_points - (total_points % (bezier_curve_degree + 1))
+    # Ensure total_points is at least bezier_curve_degree + 1
+    if total_points < bezier_curve_degree + 1:
+        total_points = len(stroke)
+    else:
+        # Ensure total points is a multiple of bezier_curve_degree + 1
+        total_points = total_points - (total_points % (bezier_curve_degree + 1))
+
     indices_to_keep = np.linspace(0, len(stroke)-1, total_points, dtype=int)
 
     for i in indices_to_keep:
@@ -177,7 +182,7 @@ def greedy_predict(
 
     for stroke in strokes:
         stroke_data = _parse_stroke(stroke=stroke, bezier_curve_degree=bezier_curve_degree)
-
+        print(stroke_data)
         # Normalise the stroke data.
         min_x = min(stroke_data.x_points)
         min_y = min(stroke_data.y_points)
