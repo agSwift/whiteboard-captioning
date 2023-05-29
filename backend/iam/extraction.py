@@ -301,6 +301,9 @@ def _get_strokes_from_stroke_file(
     max_y = float(
         root.find("WhiteboardDescription/DiagonallyOppositeCoords").attrib["y"]
     )
+    max_x = float(
+        root.find("WhiteboardDescription/DiagonallyOppositeCoords").attrib["x"]
+    )
 
     for stroke in strokes:
         min_x = min(stroke.x_points)
@@ -310,18 +313,29 @@ def _get_strokes_from_stroke_file(
         stroke.x_points = [x - min_x for x in stroke.x_points]
         stroke.y_points = [y - min_y for y in stroke.y_points]
 
-        # Scale points so that the y_points are between 0 and 1. The x_points will be scaled
-        # by the same amount, to preserve the aspect ratio.
-        scale = (
+        # Flip the y points so that the strokes are oriented correctly.
+        stroke.y_points = [(max_y - min_y) - y for y in stroke.y_points]
+
+        # Scale so that the x and y points are between 0 and 1.
+        scale_y = (
             1 if max_y - min_y == 0 else 1 / (max_y - min_y)
         )  # Avoid division by 0.
 
-        stroke.x_points = [x * scale for x in stroke.x_points]
-        stroke.y_points = [y * scale for y in stroke.y_points]
+        scale_x = (
+            1 if max_x - min_x == 0 else 1 / (max_x - min_x)
+        )  # Avoid division by 0.
+
+        stroke.x_points = [x * scale_x for x in stroke.x_points]
+        stroke.y_points = [y * scale_y for y in stroke.y_points]
 
         assert all(0 <= y <= 1 for y in stroke.y_points), (
             f"Invalid stroke file: {stroke_file}. "
             f"All y-points must be between 0 and 1."
+        )
+
+        assert all(0 <= x <= 1 for x in stroke.x_points), (
+            f"Invalid stroke file: {stroke_file}. "
+            f"All x-points must be between 0 and 1."
         )
 
     assert all(

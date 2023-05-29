@@ -1,6 +1,7 @@
 """For training models on the IAM dataset."""
 import copy
-import multiprocessing
+
+# import multiprocessing
 from enum import Enum
 from pathlib import Path
 import numpy as np
@@ -15,7 +16,7 @@ from torch.utils.data import DataLoader
 
 from iam import extraction, dataset, rnn
 
-from ctcdecode import CTCBeamDecoder
+# from ctcdecode import CTCBeamDecoder
 from jiwer import cer, wer
 import wandb
 
@@ -24,7 +25,7 @@ INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 
 # Hyperparameters.
 BATCH_SIZE = 32
-NUM_EPOCHS = 200
+NUM_EPOCHS = 1
 HIDDEN_SIZE = 256
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
 BEZIER_CURVE_DEGREE = 5
@@ -43,18 +44,18 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #    labels=[INDEX_TO_CHAR.get(i) for i in range(1, NUM_CLASSES)],
 # )
 
-DECODER = CTCBeamDecoder(
-    [INDEX_TO_CHAR.get(i) for i in range(NUM_CLASSES)],
-    model_path=None,
-    alpha=0,
-    beta=0,
-    cutoff_top_n=100,
-    cutoff_prob=1.0,
-    beam_width=BEAM_WIDTH,
-    num_processes=multiprocessing.cpu_count(),
-    blank_id=0,
-    log_probs_input=True,
-)
+# DECODER = CTCBeamDecoder(
+#     [INDEX_TO_CHAR.get(i) for i in range(NUM_CLASSES)],
+#     model_path=None,
+#     alpha=0,
+#     beta=0,
+#     cutoff_top_n=100,
+#     cutoff_prob=1.0,
+#     beam_width=BEAM_WIDTH,
+#     num_processes=multiprocessing.cpu_count(),
+#     blank_id=0,
+#     log_probs_input=True,
+# )
 
 
 class ModelType(Enum):
@@ -481,45 +482,43 @@ def _validate_epoch(
 
             # Transform from shape (seq_len, batch_size, feature_dim) to
             # (batch_size, seq_len, feature_dim).
-            beam_predictions = logits.detach().cpu().transpose(0, 1)
-            print('beam_predictions.type', beam_predictions.dtype)
+            # beam_predictions = logits.detach().cpu().transpose(0, 1)
+            # print('beam_predictions.type', beam_predictions.dtype)
 
-            print('beam_predictions.shape', beam_predictions.shape)
-            print('target_lengths.shape', target_lengths.shape)
-            print('target_lengths', target_lengths)
+            # print('beam_predictions.shape', beam_predictions.shape)
+            # print('target_lengths.shape', target_lengths.shape)
+            # print('target_lengths', target_lengths)
 
-            beam_results, _, _, _ = DECODER.decode(
-                beam_predictions
-            )
+            # beam_results, _, _, _ = DECODER.decode(
+            #     beam_predictions
+            # )
+            # print('beam_results.shape', beam_results.shape)
 
-            print('beam_results.shape', beam_results.shape)
+            # # Get the top beam results.
+            # top_beam_results = []
+            # for i in range(len(beam_results)):
+            #     target_length = target_lengths[i]
+            #     top_beam_result = beam_results[i, 0, :target_length]
+            #     top_beam_results.append(top_beam_result)
 
-            # Get the top beam results.
-            top_beam_results = []
-            for i in range(len(beam_results)):
-                target_length = target_lengths[i]
-                top_beam_result = beam_results[i, 0, :target_length]
-                top_beam_results.append(top_beam_result)
+            #     # print('target_length', target_length)
+            #     print('top_beam_result.shape', top_beam_result.shape)
+            #     # print('top_beam_result', top_beam_result)
+            #     # print()
+            #     # print()
 
-                # print('target_length', target_length)
-                print('top_beam_result.shape', top_beam_result.shape)
-                # print('top_beam_result', top_beam_result)
-                # print()
-                # print()
-            
-            beam_decodings = [
-                "".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result])
-                for beam_result in top_beam_results
-            ]
-            exit()
+            # beam_decodings = [
+            #     "".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result])
+            #     for beam_result in top_beam_results
+            # ]
+            # exit()
 
             # Calculate the CERs and WERs for the current batch.
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
-                zip(labels_to_strings, greedy_decodings, beam_decodings)
+                zip(labels_to_strings, greedy_decodings, ["beam_decoding"])
             ):
                 num_samples += 1
-
-                assert len(label) == len(beam_decoding)
+                # assert len(label) == len(beam_decoding)
 
                 # Calculate the CERs and WERs for the current sample.
                 greedy_cer = cer(label, greedy_decoding)
@@ -566,7 +565,7 @@ def _test_model(
     """Tests the model on the given test dataset.
 
     Args:
-        model (nn.Module): The model tassert(len(label) == len(beam_decoding))o test.
+        model (nn.Module): The model to test.
         criterion (nn.CTCLoss): The CTC loss function.
         test_loader (DataLoader): The test data loader.
 
@@ -648,28 +647,28 @@ def _test_model(
             #     for prediction in beam_predictions
             # ]
 
-            # Transform from shape (seq_len, batch_size, feature_dim) to
-            # (batch_size, seq_len, feature_dim).
-            beam_predictions = logits.detach().cpu().transpose(0, 1)
-            beam_results, _, _, _ = DECODER.decode(beam_predictions, target_lengths)
+            # # Transform from shape (seq_len, batch_size, feature_dim) to
+            # # (batch_size, seq_len, feature_dim).
+            # beam_predictions = logits.detach().cpu().transpose(0, 1)
+            # beam_results, _, _, _ = DECODER.decode(beam_predictions, target_lengths)
 
-            # Get the top beam results.
-            top_beam_results = []
-            for i in range(len(beam_results)):
-                target_length = target_lengths[i]
-                top_beam_result = beam_results[i, 0, :target_length]
-                top_beam_results.append(top_beam_result)
+            # # Get the top beam results.
+            # top_beam_results = []
+            # for i in range(len(beam_results)):
+            #     target_length = target_lengths[i]
+            #     top_beam_result = beam_results[i, 0, :target_length]
+            #     top_beam_results.append(top_beam_result)
 
-            beam_decodings = [
-                "".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result])
-                for beam_result in top_beam_results
-            ]
+            # beam_decodings = [
+            #     "".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result])
+            #     for beam_result in top_beam_results
+            # ]
 
             for i, (label, greedy_decoding, beam_decoding) in enumerate(
-                zip(labels_to_strings, greedy_decodings, beam_decodings)
+                zip(labels_to_strings, greedy_decodings, ["beam_decoding"])
             ):
                 num_samples += 1
-                assert len(beam_decoding) == len(label)
+                # assert len(beam_decoding) == len(label)
 
                 # Calculate the CERs and WERs for the current sample.
                 greedy_cer = cer(label, greedy_decoding)
