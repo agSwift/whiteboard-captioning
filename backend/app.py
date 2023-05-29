@@ -9,7 +9,7 @@ CORS(app)
 
 @app.route("/", methods=["POST"])
 def post_data():
-    assert request.is_json(), "Request must be JSON."
+    assert request.is_json, "Request must be JSON."
     data = request.get_json()
 
     assert "strokes" in data, "Request must contain strokes."
