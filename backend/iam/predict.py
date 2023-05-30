@@ -70,7 +70,9 @@ def _load_models():
                         bidirectional=bidirectional,
                         device=DEVICE,
                     ).to(DEVICE)
-                    model.load_state_dict(torch.load(model_path))
+                    model.load_state_dict(
+                        torch.load(model_path, map_location=DEVICE)
+                    )
 
                     # Add the model to the dictionary.
                     loaded_models[model_file_name] = model
@@ -81,7 +83,11 @@ def _load_models():
 LOADED_MODELS = _load_models()
 
 
-def _parse_stroke(stroke: list[dict[str, float]], bezier_curve_degree: int, points_per_second: int = 25) -> bezier_curves.StrokeData:
+def _parse_stroke(
+    stroke: list[dict[str, float]],
+    bezier_curve_degree: int,
+    points_per_second: int = 25,
+) -> bezier_curves.StrokeData:
     """Parse a stroke into a bezier_curves.StrokeData object.
 
     Args:
@@ -101,17 +107,17 @@ def _parse_stroke(stroke: list[dict[str, float]], bezier_curve_degree: int, poin
     time_stamps = []
     pen_ups = []
 
-    total_time = stroke[-1]['time'] - stroke[0]['time']
+    total_time = stroke[-1]["time"] - stroke[0]["time"]
     total_points = int(total_time * points_per_second)
 
-    # Ensure total_points is at least bezier_curve_degree + 1
+    # Ensure total_points is at least bezier_curve_degree + 1.
     if total_points < bezier_curve_degree + 1:
         total_points = len(stroke)
     else:
-        # Ensure total points is a multiple of bezier_curve_degree + 1
-        total_points = total_points - (total_points % (bezier_curve_degree + 1))
+        # Ensure total points is a multiple of bezier_curve_degree + 1.
+        total_points -= total_points % (bezier_curve_degree + 1)
 
-    indices_to_keep = np.linspace(0, len(stroke)-1, total_points, dtype=int)
+    indices_to_keep = np.linspace(0, len(stroke) - 1, total_points, dtype=int)
 
     for i in indices_to_keep:
         point = stroke[i]
@@ -143,7 +149,6 @@ def _parse_stroke(stroke: list[dict[str, float]], bezier_curve_degree: int, poin
 
 def greedy_predict(
     strokes: list[list[dict[str, float]]],
-    max_y: float,
     model_name: str,
     bezier_curve_degree: int,
     num_layers: int,
@@ -156,7 +161,6 @@ def greedy_predict(
     Args:
         strokes (list[list[dict[str, float]]]): A list of strokes. Each stroke is a list of points.
             Each point is a dictionary with keys "x", "y", and "time".
-        max_y (float): The maximum y value that can be reached in the writing area.
         model_name (str): The name of the model to use.
         bezier_curve_degree (int): The degree of the bezier curves to fit to the strokes.
         num_layers (int): The number of recurrent layers in the model.
@@ -177,13 +181,17 @@ def greedy_predict(
             f"Valid model names: {[model_type.name for model_type in train.ModelType]}"
         )
 
+    # Get max x and y values.
+    max_x = max(max(point["x"] for point in stroke) for stroke in strokes)
+    max_y = max(max(point["y"] for point in stroke) for stroke in strokes)
+
     # Parse the strokes into bezier_curves.StrokeData objects.
     all_stroke_data = []
 
     for stroke in strokes:
-        stroke_data = _parse_stroke(stroke=stroke, bezier_curve_degree=bezier_curve_degree)
-        print(stroke_data)
-        # Normalise the stroke data.
+        stroke_data = _parse_stroke(
+            stroke=stroke, bezier_curve_degree=bezier_curve_degree
+        )
         min_x = min(stroke_data.x_points)
         min_y = min(stroke_data.y_points)
 
@@ -191,18 +199,31 @@ def greedy_predict(
         stroke_data.x_points = [x - min_x for x in stroke_data.x_points]
         stroke_data.y_points = [y - min_y for y in stroke_data.y_points]
 
-        # Scale points so that the y_points are between 0 and 1. The x_points will be scaled
-        # by the same amount, to preserve the aspect ratio.
-        scale = (
+        # # Flip the y points so that the strokes are oriented correctly.
+        # stroke_data.y_points = [
+        #     (max_y - min_y) - y for y in stroke_data.y_points
+        # ]
+
+        # Scale so that the x and y points are between 0 and 1.
+        scale_y = (
             1 if max_y - min_y == 0 else 1 / (max_y - min_y)
         )  # Avoid division by 0.
 
-        stroke_data.x_points = [x * scale for x in stroke_data.x_points]
-        stroke_data.y_points = [y * scale for y in stroke_data.y_points]
+        scale_x = (
+            1 if max_x - min_x == 0 else 1 / (max_x - min_x)
+        )  # Avoid division by 0.
+
+        stroke_data.x_points = [x * scale_x for x in stroke_data.x_points]
+        stroke_data.y_points = [y * scale_y for y in stroke_data.y_points]
 
         assert all(0 <= y <= 1 for y in stroke_data.y_points), (
-            f"Invalid stroke: {stroke}\n"
-            f"All y-points must be between 0 and 1."
+            f"Invalid stroke: {stroke}.\n"
+            f"All y-points must be between 0 and 1 after normalization."
+        )
+
+        assert all(0 <= x <= 1 for x in stroke_data.x_points), (
+            f"Invalid stroke: {stroke}.\n"
+            f"All x-points must be between 0 and 1 after normalization."
         )
 
         all_stroke_data.append(stroke_data)

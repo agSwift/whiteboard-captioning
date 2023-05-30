@@ -347,13 +347,13 @@ def _bezier_curve_derivative(
 
 
 def _plot_stroke_and_bezier_curve(
-    stroke_data: StrokeData, bezier_control_points: npt.NDArray[np.float_]
+    stroke_data: StrokeData, bezier_control_points: list[list[float]]
 ) -> None:
     """Plots the stroke data and the Bezier curve.
 
     Args:
         stroke_data (StrokeData): The stroke data.
-        bezier_control_points (npt.NDArray[np.float_]): The Bezier control points.
+        bezier_control_points (list[list[float]]): The Bezier control points.
 
     Returns:
         None: The plot is shown.
@@ -423,7 +423,7 @@ def _plot_stroke_and_bezier_curve(
 
 def fit_stroke_with_bezier_curve(
     *, stroke: StrokeData, degree: int
-) -> npt.NDArray[np.float_]:
+) -> npt.NDArray[np.float64]:
     """Processes the stroke data and fits it with a Bezier curve.
 
     Args:
@@ -502,7 +502,7 @@ def fit_stroke_with_bezier_curve(
     acceleration_angular_dispersion = circstd(acceleration_angles)
 
     # Plot the stroke data and the Bezier curve.
-    # _plot_stroke_and_bezier_curve(stroke, bezier_control_points)
+    _plot_stroke_and_bezier_curve(stroke, bezier_control_points)
 
     # Compute the distance between end points (first and last control points).
     end_point_diff = np.array(
@@ -564,7 +564,7 @@ def fit_stroke_with_bezier_curve(
         + len(control_point_distributions)
         + len(angles)
         + len(time_coefficients)
-        + pen_up_flag
+        + 1  # Adding 1 for pen-up flag.
         + 8  # Adding 8 for velocity and acceleration (mean, std, mean angle, angular dispersion).
     )
 
@@ -573,7 +573,6 @@ def fit_stroke_with_bezier_curve(
         and (len(control_point_distributions) == degree)
         and (len(angles) == degree)
         and (len(time_coefficients) == degree - 1)
-        and (pen_up_flag == 1)
         and num_fitted_curve_features == expected_num_bezier_curve_features
     ), "Invalid number of features for the fitted Bezier curve."
 
