@@ -298,14 +298,16 @@ def _get_strokes_from_stroke_file(
     ]
 
     # Normalize the strokes.
-    max_y = float(
-        root.find("WhiteboardDescription/DiagonallyOppositeCoords").attrib["y"]
-    )
-    max_x = float(
-        root.find("WhiteboardDescription/DiagonallyOppositeCoords").attrib["x"]
-    )
+    # max_y = float(
+    #     root.find("WhiteboardDescription/DiagonallyOppositeCoords").attrib["y"]
+    # )
+    # max_x = float(
+    #     root.find("WhiteboardDescription/DiagonallyOppositeCoords").attrib["x"]
+    # )
 
     for stroke in strokes:
+        max_x = max(stroke.x_points)
+        max_y = max(stroke.y_points)
         min_x = min(stroke.x_points)
         min_y = min(stroke.y_points)
 
@@ -314,7 +316,7 @@ def _get_strokes_from_stroke_file(
         stroke.y_points = [y - min_y for y in stroke.y_points]
 
         # Flip the y points so that the strokes are oriented correctly.
-        stroke.y_points = [(max_y - min_y) - y for y in stroke.y_points]
+        # stroke.y_points = [(max_y - min_y) - y for y in stroke.y_points]
 
         # Scale so that the x and y points are between 0 and 1.
         scale_y = (
@@ -737,9 +739,6 @@ def extract_all_data(
 
             # Compute the Bezier curves for the stroke file.
             bezier_curves_data = [
-                # bezier_curves.fit_stroke_with_cubic_bezier_curve_scipy(
-                #     stroke=stroke
-                # )
                 bezier_curves.fit_stroke_with_bezier_curve(
                     stroke=stroke, degree=bezier_degree
                 )

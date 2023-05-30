@@ -83,16 +83,20 @@ def _load_models():
 LOADED_MODELS = _load_models()
 
 
-def _parse_stroke(
-    stroke: list[dict[str, float]],
+def _get_downsampled_stroke_data(
+    *,
+    x_points: list[float],
+    y_points: list[float],
+    time_stamps: list[float],
     bezier_curve_degree: int,
     points_per_second: int = 25,
 ) -> bezier_curves.StrokeData:
-    """Parse a stroke into a bezier_curves.StrokeData object.
+    """Downsamples the stroke data to the given number of points per second.
 
     Args:
-        stroke (list[dict[str, float]]): A stroke, which is a list of points.
-            Each point is a dictionary with keys "x", "y", and "time".
+        x_points (list[float]): The x points of the stroke.
+        y_points (list[float]): The y points of the stroke.
+        time_stamps (list[float]): The time stamps of the stroke.
         bezier_curve_degree (int): The degree of the bezier curves to fit to the strokes.
         points_per_second (int): The number of points to keep per second.
 
@@ -100,50 +104,55 @@ def _parse_stroke(
         bezier_curves.StrokeData: A bezier_curves.StrokeData object.
 
     Raises:
-        AssertionError: If the number of x points, y points, time stamps, and pen ups are not equal.
+        AssertionError: If the number of downsampled x points, y points, time stamps, and pen ups are not equal.
     """
-    x_points = []
-    y_points = []
-    time_stamps = []
-    pen_ups = []
+    x_points_sampled = []
+    y_points_sampled = []
+    time_stamps_sampled = []
+    pen_ups_sampled = []
 
-    total_time = stroke[-1]["time"] - stroke[0]["time"]
+    total_time = time_stamps[-1] - time_stamps[0]
     total_points = int(total_time * points_per_second)
 
     # Ensure total_points is at least bezier_curve_degree + 1.
     if total_points < bezier_curve_degree + 1:
-        total_points = len(stroke)
+        total_points = len(time_stamps)
     else:
         # Ensure total points is a multiple of bezier_curve_degree + 1.
         total_points -= total_points % (bezier_curve_degree + 1)
 
-    indices_to_keep = np.linspace(0, len(stroke) - 1, total_points, dtype=int)
+    indices_to_keep = np.linspace(
+        0, len(time_stamps) - 1, total_points, dtype=int
+    )
 
     for i in indices_to_keep:
-        point = stroke[i]
-        x_points.append(point["x"])
-        y_points.append(point["y"])
-        time_stamps.append(point["time"])
+        x_points_sampled.append(x_points[i])
+        y_points_sampled.append(y_points[i])
+        time_stamps_sampled.append(time_stamps[i])
 
         if i == indices_to_keep[-1]:
             # If this is the last point in the stroke, the pen is up.
-            pen_ups.append(1)
+            pen_ups_sampled.append(1)
         else:
             # If this is not the last point in the stroke, the pen is down.
-            pen_ups.append(0)
+            pen_ups_sampled.append(0)
 
     assert (
-        len(x_points) == len(y_points) == len(time_stamps) == len(pen_ups)
+        len(x_points_sampled)
+        == len(y_points_sampled)
+        == len(time_stamps_sampled)
+        == len(pen_ups_sampled)
     ), (
-        f"Invalid stroke: {stroke}\n"
-        "The number of x points, y points, time stamps, and pen ups must be equal."
+        f"Number of x points ({len(x_points_sampled)}), y points ({len(y_points_sampled)}), "
+        f"time stamps ({len(time_stamps_sampled)}), and pen ups ({len(pen_ups_sampled)}) "
+        "are not equal."
     )
 
     return bezier_curves.StrokeData(
-        x_points=x_points,
-        y_points=y_points,
-        time_stamps=time_stamps,
-        pen_ups=pen_ups,
+        x_points=x_points_sampled,
+        y_points=y_points_sampled,
+        time_stamps=time_stamps_sampled,
+        pen_ups=pen_ups_sampled,
     )
 
 
@@ -181,27 +190,23 @@ def greedy_predict(
             f"Valid model names: {[model_type.name for model_type in train.ModelType]}"
         )
 
-    # Get max x and y values.
-    max_x = max(max(point["x"] for point in stroke) for stroke in strokes)
-    max_y = max(max(point["y"] for point in stroke) for stroke in strokes)
-
     # Parse the strokes into bezier_curves.StrokeData objects.
     all_stroke_data = []
 
     for stroke in strokes:
-        stroke_data = _parse_stroke(
-            stroke=stroke, bezier_curve_degree=bezier_curve_degree
-        )
-        min_x = min(stroke_data.x_points)
-        min_y = min(stroke_data.y_points)
+        # Get max and min x and y values.
+        max_x = max(point["x"] for point in stroke)
+        max_y = max(point["y"] for point in stroke)
+        min_x = min(point["x"] for point in stroke)
+        min_y = min(point["y"] for point in stroke)
 
         # Shift x and y points to start at 0.
-        stroke_data.x_points = [x - min_x for x in stroke_data.x_points]
-        stroke_data.y_points = [y - min_y for y in stroke_data.y_points]
+        x_points = [point["x"] - min_x for point in stroke]
+        y_points = [point["y"] - min_y for point in stroke]
 
         # # Flip the y points so that the strokes are oriented correctly.
-        # stroke_data.y_points = [
-        #     (max_y - min_y) - y for y in stroke_data.y_points
+        # y_points = [
+        #     (max_y - min_y) - y for y in y_points
         # ]
 
         # Scale so that the x and y points are between 0 and 1.
@@ -213,8 +218,17 @@ def greedy_predict(
             1 if max_x - min_x == 0 else 1 / (max_x - min_x)
         )  # Avoid division by 0.
 
-        stroke_data.x_points = [x * scale_x for x in stroke_data.x_points]
-        stroke_data.y_points = [y * scale_y for y in stroke_data.y_points]
+        x_points = [x * scale_x for x in x_points]
+        y_points = [y * scale_y for y in y_points]
+
+        time_stamps = [point["time"] for point in stroke]
+
+        stroke_data = _get_downsampled_stroke_data(
+            x_points=x_points,
+            y_points=y_points,
+            time_stamps=time_stamps,
+            bezier_curve_degree=bezier_curve_degree,
+        )
 
         assert all(0 <= y <= 1 for y in stroke_data.y_points), (
             f"Invalid stroke: {stroke}.\n"
