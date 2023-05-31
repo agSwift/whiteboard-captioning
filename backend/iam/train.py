@@ -25,17 +25,17 @@ INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 
 # Hyperparameters.
 BATCH_SIZE = 32
-NUM_EPOCHS = 1
+NUM_EPOCHS = 500
 HIDDEN_SIZE = 256
 NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
 BEZIER_CURVE_DEGREE = 5
 CROSS_VALIDATION = False
 REDUCTION = "mean"
 NUM_LAYERS = 3
-DROPOUT_RATE = 0.3
+DROPOUT_RATE = 0.4
 BIDIRECTIONAL = True
 LEARNING_RATE = 1e-3
-PATIENCE = 50
+PATIENCE = 20
 BEAM_WIDTH = 4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
