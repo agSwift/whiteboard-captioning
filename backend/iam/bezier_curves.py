@@ -138,14 +138,14 @@ def pad_bezier_curves_data(
 
 
 def _get_bezier_control_points(
-    x_points: list[float], y_points: list[float], degree: int = 3
+    *, x_points: list[float], y_points: list[float], degree: int
 ) -> list[list[float]]:
     """Compute least square bezier curve fit using penrose pseudoinverse.
 
     Args:
         x_points (list[float]): X-coordinates of the points to fit.
         y_points (list[float]): Y-coordinates of the points to fit.
-        degree (int, optional): Degree of the Bezier curve. Defaults to 3.
+        degree (int): Degree of the Bezier curve.
 
     Returns:
         list[list[float]]: A list of control points for the Bezier curve (e.g. [[x0, y0], [x1, y1]])
@@ -277,13 +277,13 @@ def _bezier_curve(
 
 
 def _plot_stroke_and_bezier_curve(
-    stroke_data: StrokeData, bezier_control_points: npt.NDArray[np.float_]
+    stroke_data: StrokeData, bezier_control_points: list[list[float]]
 ) -> None:
     """Plots the stroke data and the Bezier curve.
 
     Args:
         stroke_data (StrokeData): The stroke data.
-        bezier_control_points (npt.NDArray[np.float_]): The Bezier control points.
+        bezier_control_points (list[list[float]]): The Bezier control points.
 
     Returns:
         None: The plot is shown.
@@ -304,6 +304,9 @@ def _plot_stroke_and_bezier_curve(
     )
     plt.plot(bezier_x_points, bezier_y_points, "b-", label="Bezier Curve")
 
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.title("Stroke and Bezier Curve")
     plt.legend()
     plt.show()
 
@@ -333,7 +336,7 @@ def fit_stroke_with_bezier_curve(
         1  # 1 Total length.
         + 1  # 1 Directness.
         + 1  # 1 Total curvature.
-        + 1  # 1 Total absolute angular change.
+        + 4  # Average sin/direction and curvature values.
         + 2  # End point diff.
         + degree  # Control point distributions.
         + degree  # Angles.
@@ -347,11 +350,11 @@ def fit_stroke_with_bezier_curve(
 
     # Get the Bezier control points for the stroke data.
     bezier_control_points = _get_bezier_control_points(
-        stroke.x_points, stroke.y_points, degree=degree
+        x_points=stroke.x_points, y_points=stroke.y_points, degree=degree
     )
 
     # Plot the stroke data and the Bezier curve.
-    # _plot_stroke_and_bezier_curve(stroke, bezier_control_points)
+    _plot_stroke_and_bezier_curve(stroke, bezier_control_points)
 
     # Compute total length of the stroke.
     total_length = np.sum(
@@ -377,11 +380,21 @@ def fit_stroke_with_bezier_curve(
     # Compute total curvature of the stroke with interpolated data.
     dx = np.diff(x_interp)
     dy = np.diff(y_interp)
-    curvature = np.abs(np.diff(np.arctan2(dy, dx)))
-    total_curvature = np.sum(curvature)
 
-    # Compute total absolute angular change of the stroke with interpolated data.
-    total_abs_angular_change = np.sum(np.abs(np.diff(np.arctan2(dy, dx))))
+    # Compute the direction of the stroke.
+    direction = np.arctan2(dy, dx)
+    sin_direction = np.sin(direction)
+    cos_direction = np.cos(direction)
+    avg_sin_direction = np.mean(sin_direction)
+    avg_cos_direction = np.mean(cos_direction)
+
+    # Compute the curvature of the stroke.
+    curvature = np.abs(np.diff(direction))
+    total_curvature = np.sum(curvature)
+    sin_curvature = np.sin(curvature)
+    cos_curvature = np.cos(curvature)
+    avg_sin_curvature = np.mean(sin_curvature)
+    avg_cos_curvature = np.mean(cos_curvature)
 
     # Compute the distance between end points (first and last control points).
     end_point_diff = np.array(
@@ -445,7 +458,7 @@ def fit_stroke_with_bezier_curve(
         1  # Adding 1 for total length.
         + 1  # Adding 1 for directness.
         + 1  # Adding 1 for total curvature.
-        + 1  # Adding 1 for total absolute angular change.
+        + 4  # Adding 4 for average sin_direction, cos_direction, sin_curvature, cos_curvature.
         + len(end_point_diff)
         + len(control_point_distributions)
         + len(angles)
@@ -466,7 +479,10 @@ def fit_stroke_with_bezier_curve(
             total_length,
             directness,
             total_curvature,
-            total_abs_angular_change,
+            avg_sin_direction,
+            avg_cos_direction,
+            avg_sin_curvature,
+            avg_cos_curvature,
             *end_point_diff,
             *control_point_distributions.reshape(-1),
             *angles.reshape(-1),
@@ -475,7 +491,7 @@ def fit_stroke_with_bezier_curve(
         ]
     ).reshape(
         1, -1
-    )  # Will be a 2D array with the resulting features
+    )  # Will be a 2D array with the resulting shape (1, num_fitted_curve_features).
 
 
 # A slower implementation of the above function using scipy, which is not used.

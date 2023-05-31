@@ -316,7 +316,7 @@ def _get_strokes_from_stroke_file(
         stroke.y_points = [y - min_y for y in stroke.y_points]
 
         # Flip the y points so that the strokes are oriented correctly.
-        # stroke.y_points = [(max_y - min_y) - y for y in stroke.y_points]
+        stroke.y_points = [(max_y - min_y) - y for y in stroke.y_points]
 
         # Scale so that the x and y points are between 0 and 1.
         scale_y = (
