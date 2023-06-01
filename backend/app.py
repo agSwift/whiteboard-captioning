@@ -23,6 +23,7 @@ def post_data():
     bezier_curve_degree = data["bezier_curve_degree"]
     num_layers = data["num_layers"]
     bidirectional = data["bidirectional"]
+    points_per_second = data["points_per_second"]
 
     assert isinstance(strokes, list), "Strokes must be a list."
     assert isinstance(model_name, str), "model_name must be a string."
@@ -31,13 +32,33 @@ def post_data():
     ), "bezier_curve_degree must be an integer."
     assert isinstance(num_layers, int), "num_layers must be an integer."
     assert isinstance(bidirectional, bool), "bidirectional must be a boolean."
+    assert isinstance(
+        points_per_second, int
+    ), "points_per_second must be an integer."
 
-    prediction = predict.greedy_predict(
+    print("Points per second:", points_per_second)
+
+    (
+        prediction,
+        all_stroke_x_points,
+        all_stroke_y_points,
+        all_bezier_x_points,
+        all_bezier_y_points,
+    ) = predict.greedy_predict(
         strokes=strokes,
         model_name=model_name,
         bezier_curve_degree=bezier_curve_degree,
         num_layers=num_layers,
         bidirectional=bidirectional,
+        points_per_second=points_per_second,
     )
 
-    return jsonify(prediction=prediction)
+    return jsonify(
+        {
+            "prediction": prediction,
+            "stroke_x_points": all_stroke_x_points,
+            "stroke_y_points": all_stroke_y_points,
+            "bezier_x_points": all_bezier_x_points,
+            "bezier_y_points": all_bezier_y_points,
+        }
+    )

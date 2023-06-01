@@ -12,7 +12,7 @@ const DrawingCanvas = ({
   const [canvasContext, setCanvasContext] = useState(null);
 
   const [color, setColor] = useState("#000000");
-  const [size, setSize] = useState(4);
+  const [size, setSize] = useState(10);
   const [canvasMousePosition, setCanvasMousePosition] = useState({
     x: 0,
     y: 0,

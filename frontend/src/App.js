@@ -4,9 +4,11 @@ import ModelSelectButton from "./components/ModelSelectButton";
 import PredictButton from "./components/PredictButton";
 import ParameterSlider from "./components/ParameterSlider";
 import ToggleSwitch from "./components/ToggleSwitch";
+import BezierGraph from "./components/BezierGraph";
 
 const BACKEND_URL = "http://127.0.0.1:5000/";
 const PREDICTION_MODELS = ["RNN", "LSTM", "GRU"];
+const MAX_SAMPLING_RATE = 200;
 
 function App() {
   const [predictedText, setPredictedText] = useState("Predicted text here");
@@ -18,16 +20,23 @@ function App() {
   const [selectedModel, setSelectedModel] = useState(PREDICTION_MODELS[1]);
   const [bezierCurveDegree, setBezierCurveDegree] = useState(5);
   const [numLayers, setNumLayers] = useState(3);
+  const [pointsPerSecond, setPointsPerSecond] = useState(MAX_SAMPLING_RATE);
   const [bidirectional, setBidirectional] = useState(true);
+
+  const [strokeXPoints, setStrokeXPoints] = useState([[]]);
+  const [strokeYPoints, setStrokeYPoints] = useState([[]]);
+  const [bezierXPoints, setBezierXPoints] = useState([[]]);
+  const [bezierYPoints, setBezierYPoints] = useState([[]]);
+  const [graphNumber, setGraphNumber] = useState(-1);
 
   const SendData = (e) => {
     const data = {
       strokes: strokes,
-      max_y: maxY,
       model_name: selectedModel,
       bezier_curve_degree: parseInt(bezierCurveDegree),
       num_layers: parseInt(numLayers),
       bidirectional: bidirectional,
+      points_per_second: parseInt(pointsPerSecond),
     };
 
     console.log(data);
@@ -43,8 +52,16 @@ function App() {
         const body = await response.json();
         console.log(body);
         setPredictedText(body.prediction);
+        setStrokeXPoints(body.stroke_x_points);
+        setStrokeYPoints(body.stroke_y_points);
+        setBezierXPoints(body.bezier_x_points);
+        setBezierYPoints(body.bezier_y_points);
+        setGraphNumber(body.stroke_x_points.length - 1);
       })
-      .catch(console.log);
+      .catch((e) => {
+        console.log(e);
+        setGraphNumber(-1);
+      });
   };
 
   const centeredDivStyle = {
@@ -76,17 +93,11 @@ function App() {
           setMaxY={setMaxY}
         />
       </div>
-      <div
-        style={borderedDivStyle}
-      >
-        {predictedText}
-      </div>
+      <div style={borderedDivStyle}>{predictedText}</div>
       <div style={centeredDivStyle}>
         <PredictButton onClick={SendData} />
       </div>
-      <div
-        style={centeredDivStyle}
-      >
+      <div style={centeredDivStyle}>
         {PREDICTION_MODELS.map((model) => (
           <ModelSelectButton
             key={model}
@@ -95,6 +106,15 @@ function App() {
             setSelectedModel={setSelectedModel}
           />
         ))}
+      </div>
+      <div style={centeredDivStyle}>
+        <ParameterSlider
+          min={1}
+          max={MAX_SAMPLING_RATE}
+          value={pointsPerSecond}
+          setValue={setPointsPerSecond}
+          label={"Points per Second"}
+        />
       </div>
       <div style={centeredDivStyle}>
         <ParameterSlider
@@ -111,7 +131,33 @@ function App() {
           setValue={setNumLayers}
           label={"Number of Layers"}
         />
-        <ToggleSwitch label={'Bidirectional?'} setValue={setBidirectional} value={bidirectional} />
+        <ToggleSwitch
+          label={"Bidirectional?"}
+          setValue={setBidirectional}
+          value={bidirectional}
+        />
+      </div>
+      <div style={centeredDivStyle}>
+        {graphNumber < 0 ? null : (
+          <ParameterSlider
+            min={0}
+            max={strokeXPoints.length - 1}
+            value={graphNumber}
+            setValue={setGraphNumber}
+            label={"Graph display"}
+          />
+        )}
+      </div>
+      <div style={centeredDivStyle}>
+        {graphNumber < 0 ? null : (
+          <BezierGraph
+            strokeXPoints={strokeXPoints}
+            strokeYPoints={strokeYPoints}
+            bezierXPoints={bezierXPoints}
+            bezierYPoints={bezierYPoints}
+            graphNumber={graphNumber}
+          />
+        )}
       </div>
     </div>
   );

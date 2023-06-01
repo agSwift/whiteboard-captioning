@@ -315,8 +315,8 @@ def _get_strokes_from_stroke_file(
         stroke.x_points = [x - min_x for x in stroke.x_points]
         stroke.y_points = [y - min_y for y in stroke.y_points]
 
-        # Flip the y points so that the strokes are oriented correctly.
-        stroke.y_points = [(max_y - min_y) - y for y in stroke.y_points]
+        # Flip the points in the y-axis.
+        # stroke.y_points = [(max_y - min_y) - y for y in stroke.y_points]
 
         # Scale so that the x and y points are between 0 and 1.
         scale_y = (
@@ -738,12 +738,16 @@ def extract_all_data(
             strokes = _get_strokes_from_stroke_file(stroke_file)
 
             # Compute the Bezier curves for the stroke file.
-            bezier_curves_data = [
-                bezier_curves.fit_stroke_with_bezier_curve(
+            bezier_curves_data = []
+            for stroke in strokes:
+                (
+                    _,
+                    _,
+                    bezier_curve_features,
+                ) = bezier_curves.fit_stroke_with_bezier_curve(
                     stroke=stroke, degree=bezier_degree
                 )
-                for stroke in strokes
-            ]
+                bezier_curves_data.append(bezier_curve_features)
 
             # Append the label and Bezier curve data to the appropriate dataset.
             bezier_curves.append_label_bezier_curves_data(

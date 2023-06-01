@@ -89,7 +89,7 @@ def _get_downsampled_stroke_data(
     y_points: list[float],
     time_stamps: list[float],
     bezier_curve_degree: int,
-    points_per_second: int = 25,
+    points_per_second: int,
 ) -> bezier_curves.StrokeData:
     """Downsamples the stroke data to the given number of points per second.
 
@@ -134,7 +134,7 @@ def _get_downsampled_stroke_data(
             # If this is the last point in the stroke, the pen is up.
             pen_ups_sampled.append(1)
         else:
-            # If this is not the last point in the stroke, the pen is down.
+            # The pen is down.
             pen_ups_sampled.append(0)
 
     assert (
@@ -162,7 +162,8 @@ def greedy_predict(
     bezier_curve_degree: int,
     num_layers: int,
     bidirectional: bool,
-) -> str:
+    points_per_second: int,
+) -> tuple[str, list[float], list[float], list[float], list[float]]:
     """Predict the characters in the strokes.
 
     Uses greedy decoding to convert the logits to a string.
@@ -174,9 +175,11 @@ def greedy_predict(
         bezier_curve_degree (int): The degree of the bezier curves to fit to the strokes.
         num_layers (int): The number of recurrent layers in the model.
         bidirectional (bool): Whether the model is bidirectional.
+        points_per_second (int): The number of points to keep per second.
 
     Returns:
-        str: The predicted string.
+        str, list[float], list[float], list[float], list[float]: A tuple containing the predicted
+            string and the x points and y points of the stroke points and bezier curves.
 
     Raises:
         ValueError: If the model name is invalid.
@@ -201,13 +204,14 @@ def greedy_predict(
         min_y = min(point["y"] for point in stroke)
 
         # Shift x and y points to start at 0.
-        x_points = [point["x"] - min_x for point in stroke]
-        y_points = [point["y"] - min_y for point in stroke]
+        x_points_shifted = [point["x"] - min_x for point in stroke]
+        y_points_shifted = [point["y"] - min_y for point in stroke]
 
-        # # Flip the y points so that the strokes are oriented correctly.
-        # y_points = [
-        #     (max_y - min_y) - y for y in y_points
-        # ]
+        # Flip the y points so that the strokes are oriented correctly.
+        # y_points_shifted = [(max_y - min_y) - y for y in y_points_shifted]
+
+        # Flip the points in the x-axis.
+        # x_points_shifted = [(max_x - min_x) - x for x in x_points_shifted]
 
         # Scale so that the x and y points are between 0 and 1.
         scale_y = (
@@ -218,39 +222,52 @@ def greedy_predict(
             1 if max_x - min_x == 0 else 1 / (max_x - min_x)
         )  # Avoid division by 0.
 
-        x_points = [x * scale_x for x in x_points]
-        y_points = [y * scale_y for y in y_points]
-
+        x_points_scaled = [x * scale_x for x in x_points_shifted]
+        y_points_scaled = [y * scale_y for y in y_points_shifted]
         time_stamps = [point["time"] for point in stroke]
 
         stroke_data = _get_downsampled_stroke_data(
-            x_points=x_points,
-            y_points=y_points,
-            time_stamps=time_stamps,
+            x_points=x_points_scaled[:],
+            y_points=y_points_scaled[:],
+            time_stamps=time_stamps[:],
             bezier_curve_degree=bezier_curve_degree,
+            points_per_second=points_per_second,
         )
 
         assert all(0 <= y <= 1 for y in stroke_data.y_points), (
             f"Invalid stroke: {stroke}.\n"
-            f"All y-points must be between 0 and 1 after normalization."
+            f"All y-points must be between 0 and 1 after downsampling."
         )
 
         assert all(0 <= x <= 1 for x in stroke_data.x_points), (
             f"Invalid stroke: {stroke}.\n"
-            f"All x-points must be between 0 and 1 after normalization."
+            f"All x-points must be between 0 and 1 after downsampling."
         )
 
         all_stroke_data.append(stroke_data)
 
+    assert len(all_stroke_data) == len(
+        strokes
+    ), "Number of strokes is not equal."
+
     # Fit bezier curves to the strokes.
-    bezier_curves_data = np.array(
-        [
-            bezier_curves.fit_stroke_with_bezier_curve(
-                stroke=stroke_data, degree=bezier_curve_degree
-            )
-            for stroke_data in all_stroke_data
-        ]
-    )
+    bezier_curves_data = []
+    all_bezier_x_points = []
+    all_bezier_y_points = []
+
+    for stroke_data in all_stroke_data:
+        (
+            bezier_x_points,
+            bezier_y_points,
+            bezier_curve_features,
+        ) = bezier_curves.fit_stroke_with_bezier_curve(
+            stroke=stroke_data, degree=bezier_curve_degree
+        )
+        bezier_curves_data.append(bezier_curve_features)
+        all_bezier_x_points.append(list(bezier_x_points))
+        all_bezier_y_points.append(list(bezier_y_points))
+
+    bezier_curves_data = np.array(bezier_curves_data)
 
     # Convert the bezier curves data to a tensor.
     bezier_curves_data = torch.tensor(bezier_curves_data, dtype=torch.float32)
@@ -276,4 +293,18 @@ def greedy_predict(
     greedy_prediction = logits.argmax(2).detach().cpu().numpy().T
     greedy_prediction = greedy_prediction.squeeze(-1)
 
-    return train.greedy_decode(greedy_prediction)
+    all_stroke_x_points = [
+        stroke_data.x_points for stroke_data in all_stroke_data
+    ]
+    all_stroke_y_points = [
+        stroke_data.y_points for stroke_data in all_stroke_data
+    ]
+
+    # Return the predicted string and the x and y points of the strokes and bezier curves.
+    return (
+        train.greedy_decode(greedy_prediction),
+        all_stroke_x_points,
+        all_stroke_y_points,
+        all_bezier_x_points,
+        all_bezier_y_points,
+    )

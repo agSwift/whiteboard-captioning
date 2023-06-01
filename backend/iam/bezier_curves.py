@@ -243,7 +243,7 @@ def _bernstein_poly(i: int, n: int, t: np.float64) -> np.float64:
 
 
 def _bezier_curve(
-    control_points: list[list[float]], num_time_steps: int = 50
+    control_points: list[list[float]], num_time_steps: int = 1000
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Given a set of control points, return the bezier curve defined by the control points.
@@ -277,43 +277,44 @@ def _bezier_curve(
 
 
 def _plot_stroke_and_bezier_curve(
-    stroke_data: StrokeData, bezier_control_points: list[list[float]]
+    *,
+    stroke_data: StrokeData,
+    bezier_control_points: list[list[float]],
+    bezier_x_points: npt.NDArray[np.float64],
+    bezier_y_points: npt.NDArray[np.float64],
 ) -> None:
     """Plots the stroke data and the Bezier curve.
 
     Args:
         stroke_data (StrokeData): The stroke data.
         bezier_control_points (list[list[float]]): The Bezier control points.
+        bezier_x_points (npt.NDArray[np.float64]): The x coordinates of the Bezier curve.
+        bezier_y_points (npt.NDArray[np.float64]): The y coordinates of the Bezier curve.
 
     Returns:
         None: The plot is shown.
     """
-    x_points = stroke_data.x_points
-    y_points = stroke_data.y_points
-
     control_x_points = [point[0] for point in bezier_control_points]
     control_y_points = [point[1] for point in bezier_control_points]
 
-    plt.plot(x_points, y_points, "ro", label="Stroke Points")
+    plt.plot(
+        stroke_data.x_points, stroke_data.y_points, "ro", label="Stroke Points"
+    )
     plt.plot(
         control_x_points, control_y_points, "k--o", label="Control Points"
     )
-
-    bezier_x_points, bezier_y_points = _bezier_curve(
-        bezier_control_points, num_time_steps=1000
-    )
     plt.plot(bezier_x_points, bezier_y_points, "b-", label="Bezier Curve")
-
     plt.xlabel("X")
     plt.ylabel("Y")
     plt.title("Stroke and Bezier Curve")
     plt.legend()
+    # plt.savefig("stroke_and_bezier_curve.png")
     plt.show()
 
 
 def fit_stroke_with_bezier_curve(
     *, stroke: StrokeData, degree: int
-) -> np.ndarray:
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], np.ndarray]:
     """Processes the stroke data and fits it with a Bezier curve.
 
     Args:
@@ -321,7 +322,9 @@ def fit_stroke_with_bezier_curve(
         degree (int): The degree of the Bezier curve.
 
     Returns:
-        A numpy array containing the calculated Bezier curve information.
+        Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], np.ndarray]: Tuple containing
+            features of the bezier curve, the x and y coordinates of the points
+            on the Bezier curve.
     """
 
     # Check the stroke data.
@@ -346,15 +349,35 @@ def fit_stroke_with_bezier_curve(
 
     # Check if the stroke data has enough points.
     if len(stroke.x_points) < degree + 1:
-        return np.zeros((1, expected_num_features))
+        return (
+            np.empty(
+                [
+                    1,
+                ]
+            ),
+            np.empty(
+                [
+                    1,
+                ]
+            ),
+            np.zeros((1, expected_num_features)),
+        )
 
-    # Get the Bezier control points for the stroke data.
+    # Fit a Bezier curve to the stroke data.
     bezier_control_points = _get_bezier_control_points(
         x_points=stroke.x_points, y_points=stroke.y_points, degree=degree
     )
+    bezier_x_points, bezier_y_points = _bezier_curve(
+        bezier_control_points, num_time_steps=1000
+    )
 
     # Plot the stroke data and the Bezier curve.
-    _plot_stroke_and_bezier_curve(stroke, bezier_control_points)
+    # _plot_stroke_and_bezier_curve(
+    #     stroke_data=stroke,
+    #     bezier_control_points=bezier_control_points,
+    #     bezier_x_points=bezier_x_points,
+    #     bezier_y_points=bezier_y_points,
+    # )
 
     # Compute total length of the stroke.
     total_length = np.sum(
@@ -474,23 +497,25 @@ def fit_stroke_with_bezier_curve(
         and num_fitted_curve_features == expected_num_features
     ), "Invalid number of features for the fitted Bezier curve."
 
-    return np.array(
-        [
-            total_length,
-            directness,
-            total_curvature,
-            avg_sin_direction,
-            avg_cos_direction,
-            avg_sin_curvature,
-            avg_cos_curvature,
-            *end_point_diff,
-            *control_point_distributions.reshape(-1),
-            *angles.reshape(-1),
-            *time_coefficients,
-            pen_up_flag,
-        ]
-    ).reshape(
-        1, -1
+    return (
+        bezier_x_points,
+        bezier_y_points,
+        np.array(
+            [
+                total_length,
+                directness,
+                total_curvature,
+                avg_sin_direction,
+                avg_cos_direction,
+                avg_sin_curvature,
+                avg_cos_curvature,
+                *end_point_diff,
+                *control_point_distributions.reshape(-1),
+                *angles.reshape(-1),
+                *time_coefficients,
+                pen_up_flag,
+            ]
+        ).reshape(1, -1),
     )  # Will be a 2D array with the resulting shape (1, num_fitted_curve_features).
 
 
