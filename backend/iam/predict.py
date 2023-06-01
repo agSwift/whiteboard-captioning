@@ -104,7 +104,8 @@ def _get_downsampled_stroke_data(
         bezier_curves.StrokeData: A bezier_curves.StrokeData object.
 
     Raises:
-        AssertionError: If the number of downsampled x points, y points, time stamps, and pen ups are not equal.
+        AssertionError: If the number of downsampled x points, y points, time stamps,
+            and pen ups are not equal.
     """
     x_points_sampled = []
     y_points_sampled = []
@@ -208,7 +209,7 @@ def greedy_predict(
         y_points_shifted = [point["y"] - min_y for point in stroke]
 
         # Flip the y points so that the strokes are oriented correctly.
-        # y_points_shifted = [(max_y - min_y) - y for y in y_points_shifted]
+        y_points_shifted = [(max_y - min_y) - y for y in y_points_shifted]
 
         # Flip the points in the x-axis.
         # x_points_shifted = [(max_x - min_x) - x for x in x_points_shifted]

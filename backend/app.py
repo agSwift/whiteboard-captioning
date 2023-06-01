@@ -36,8 +36,6 @@ def post_data():
         points_per_second, int
     ), "points_per_second must be an integer."
 
-    print("Points per second:", points_per_second)
-
     (
         prediction,
         all_stroke_x_points,

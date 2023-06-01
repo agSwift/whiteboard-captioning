@@ -51,7 +51,7 @@ const DrawingCanvas = ({
       newPoints.push([
         {
           x: canvasMousePosition.x,
-          y: canvasMousePosition.y,
+          y: maxY - canvasMousePosition.y,
           time: Date.now() / 1000,
         },
       ]);

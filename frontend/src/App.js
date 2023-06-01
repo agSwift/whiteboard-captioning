@@ -20,13 +20,13 @@ function App() {
   const [selectedModel, setSelectedModel] = useState(PREDICTION_MODELS[1]);
   const [bezierCurveDegree, setBezierCurveDegree] = useState(5);
   const [numLayers, setNumLayers] = useState(3);
-  const [pointsPerSecond, setPointsPerSecond] = useState(MAX_SAMPLING_RATE);
+  const [pointsPerSecond, setPointsPerSecond] = useState(20);
   const [bidirectional, setBidirectional] = useState(true);
 
-  const [strokeXPoints, setStrokeXPoints] = useState([[]]);
-  const [strokeYPoints, setStrokeYPoints] = useState([[]]);
-  const [bezierXPoints, setBezierXPoints] = useState([[]]);
-  const [bezierYPoints, setBezierYPoints] = useState([[]]);
+  const [strokeXPoints, setStrokeXPoints] = useState([]);
+  const [strokeYPoints, setStrokeYPoints] = useState([]);
+  const [bezierXPoints, setBezierXPoints] = useState([]);
+  const [bezierYPoints, setBezierYPoints] = useState([]);
   const [graphNumber, setGraphNumber] = useState(-1);
 
   const SendData = (e) => {
@@ -50,7 +50,6 @@ function App() {
     })
       .then(async (response) => {
         const body = await response.json();
-        console.log(body);
         setPredictedText(body.prediction);
         setStrokeXPoints(body.stroke_x_points);
         setStrokeYPoints(body.stroke_y_points);
@@ -139,13 +138,15 @@ function App() {
       </div>
       <div style={centeredDivStyle}>
         {graphNumber < 0 ? null : (
-          <ParameterSlider
-            min={0}
-            max={strokeXPoints.length - 1}
-            value={graphNumber}
-            setValue={setGraphNumber}
-            label={"Graph display"}
-          />
+          <div style={{ width: "20%" }}>
+            <ParameterSlider
+              min={0}
+              max={strokeXPoints.length - 1}
+              value={graphNumber}
+              setValue={setGraphNumber}
+              label={"Graph display"}
+            />
+          </div>
         )}
       </div>
       <div style={centeredDivStyle}>

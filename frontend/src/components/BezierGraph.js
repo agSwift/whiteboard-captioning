@@ -5,7 +5,6 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  LineChart,
   CartesianGrid,
   ComposedChart,
   Scatter,
@@ -36,11 +35,16 @@ const BezierGraph = ({
     );
   }
 
+
+
   return (
     <ComposedChart width={400} height={400} b>
       <CartesianGrid strokeDasharray={"3 3"}/>
-      <Line xAxisId="bezier" yAxisId="bezier" dataKey="y" dot={false}  data={bezierPoints} />
-      <Scatter xAxisId="stroke" yAxisId="stroke" dataKey="y" dot={false} fill='blue'  data={strokePoints} />
+      <Line xAxisId="strokes" yAxisId="strokes" dataKey="y" data={bezierPoints} dot={false} />
+      <Scatter xAxisId="strokes" yAxisId="strokes" dataKey="y" fill={'red'} data={strokePoints} />
+      <XAxis xAxisId="strokes" orientation="bottom"  type="number" dataKey="x" tick={true} />
+      <YAxis yAxisId="strokes" orientation='left' type="number" tick={true} reversed={true} />
+      <Tooltip />
   </ComposedChart>
   );
 };
