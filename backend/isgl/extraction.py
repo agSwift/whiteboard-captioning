@@ -48,7 +48,7 @@ def _extract_data_from_dir(
         )
 
     # Get all text files in the stroke file directory.
-    stroke_files = list(stroke_data_dir_path.value.glob("*.txt"))
+    stroke_files = sorted(list(stroke_data_dir_path.value.glob("*.txt")))
 
     stroke_points = []
     stroke_labels = []
@@ -66,10 +66,10 @@ def _extract_data_from_dir(
 
         num_points = 0
         with open(stroke_file, "r", encoding="utf-8") as file:
-            # The first line is the digit/character label.
+            # The first line is the digit/character label, the remaining lines
+            # are potential stroke points.
             file_label = file.readline().rstrip()
 
-            # The remaining lines are potential stroke points.
             file_points = []
             for line in file:
                 line = line.rstrip()
@@ -84,6 +84,31 @@ def _extract_data_from_dir(
         # Check if the file contains any stroke points.
         if not file_points:
             continue
+
+        max_x = max(file_points, key=lambda point: point[0])[0]
+        max_y = max(file_points, key=lambda point: point[1])[1]
+        min_x = min(file_points, key=lambda point: point[0])[0]
+        min_y = min(file_points, key=lambda point: point[1])[1]
+
+        # Shift the stroke points so that the minimum x and y coordinates are 0.
+        file_points = [
+            (x_coord - min_x, y_coord - min_y)
+            for x_coord, y_coord in file_points
+        ]
+
+        # Scale the stroke points so that the maximum x and y coordinates are 1.
+        scale_y = 1 / (max_y - min_y) if max_y - min_y != 0 else 1
+        scale_x = 1 / (max_x - min_x) if max_x - min_x != 0 else 1
+
+        file_points = [
+            (x_coord * scale_x, y_coord * scale_y)
+            for x_coord, y_coord in file_points
+        ]
+
+        assert all(
+            0 <= x_coord <= 1 and 0 <= y_coord <= 1
+            for x_coord, y_coord in file_points
+        ), "The stroke points must be between 0 and 1."
 
         stroke_points.append(file_points)
         stroke_labels.append(file_label)

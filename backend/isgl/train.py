@@ -10,13 +10,15 @@ import dataset
 import extraction
 import rnn
 
+import wandb
+
 # Hyperparameters.
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 INPUT_SIZE = 2  # x and y coordinates.
-HIDDEN_SIZE = 64
+HIDDEN_SIZE = 256
 NUM_CLASSES = len(dataset.ALL_CHARS)
 NUM_LAYERS = 2
-NUM_EPOCHS = 5
+NUM_EPOCHS = 8
 LEARNING_RATE = 3e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -55,6 +57,24 @@ def train_model(
             f"Invalid model type: {model_type}. Must be an instance of {ModelType}."
         )
 
+    wandb.login()
+
+    # Initialize the W&B run.
+    wandb.init(
+        # Set the project where this run will be logged.
+        project="drawing-gui",
+        # Track hyperparameters and run metadata.
+        config={
+            "learning_rate": LEARNING_RATE,
+            "batch_size": BATCH_SIZE,
+            "num_epochs": NUM_EPOCHS,
+            "num_layers": NUM_LAYERS,
+            "hidden_size": HIDDEN_SIZE,
+            "input_size": INPUT_SIZE,
+            "model_type": model_type.name,
+        },
+    )
+
     print(f"Training model: {model_type.name}")
     model = model_type.value(
         input_size=INPUT_SIZE,
@@ -63,6 +83,7 @@ def train_model(
         num_classes=NUM_CLASSES,
         device=DEVICE,
     )
+    wandb.watch(model)
 
     # Create data loaders for the training, validation and test sets.
     train_loader = DataLoader(
@@ -94,12 +115,15 @@ def train_model(
     for epoch in range(NUM_EPOCHS):
         pbar = tqdm(train_loader)
         pbar.set_description(f"Epoch [{epoch + 1}/{NUM_EPOCHS}]")
+
+        total_train_loss = 0.0
         for i, (points, labels) in enumerate(pbar):
             points, labels = points.to(DEVICE), labels.to(DEVICE)
 
             # Forward pass.
             outputs = model(points)
             loss = criterion(outputs, labels)
+            total_train_loss += loss
 
             # Backward and optimize.
             optimizer.zero_grad()
@@ -110,8 +134,12 @@ def train_model(
                 # Update the progress bar with the loss values.
                 pbar.set_postfix(Loss=f"{loss.item():.4f}")
 
+        avg_train_loss = total_train_loss / len(train_loader)
+        wandb.log({"Training - Loss": avg_train_loss}, step=epoch)
+
         # Validate the model.
         with torch.no_grad():
+            total_val_loss = 0.0
             correct = 0
             total = 0
             for points, labels in val_loader:
@@ -124,6 +152,14 @@ def train_model(
                 labels_idx_max = torch.argmax(labels, dim=1)
                 correct += (predicted == labels_idx_max).sum().item()
 
+                total_val_loss += criterion(outputs, labels)
+
+            avg_val_loss = total_val_loss / len(val_loader)
+            wandb.log({"Validation - Loss": avg_val_loss}, step=epoch)
+
+            wandb.log(
+                {"Validation - Accuracy": 100 * correct / total}, step=epoch
+            )
             print(
                 f"Validation accuracy of the model on the {total} "
                 f"test points: {100 * correct / total:.2f} %"
@@ -133,14 +169,21 @@ def train_model(
     with torch.no_grad():
         correct = 0
         total = 0
+        total_test_loss = 0.0
         for points, labels in test_loader:
             points, labels = points.to(DEVICE), labels.to(DEVICE)
             outputs = model(points)
+            total_test_loss += criterion(outputs, labels)
+
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             labels_idx_max = torch.argmax(labels, dim=1)
             correct += (predicted == labels_idx_max).sum().item()
 
+        avg_test_loss = total_test_loss / len(test_loader)
+        wandb.log({"Test - Loss": avg_test_loss})
+
+        wandb.log({"Test - Accuracy": 100 * correct / total})
         print(
             f"Test accuracy of the model on the {total} "
             f"test points: {100 * correct / total:.2f} %",
@@ -179,7 +222,7 @@ if __name__ == "__main__":
 
     # Train the RNN model.
     train_model(
-        model_type=ModelType.RNN,
+        model_type=ModelType.LSTM,
         train_dataset=train_set,
         val_dataset=val_set,
         test_dataset=test_set,
