@@ -20,14 +20,14 @@ from iam import extraction, dataset, rnn
 from jiwer import cer, wer
 import wandb
 
-INDEX_TO_CHAR = {index: char for char, index in dataset.CHAR_TO_INDEX.items()}
-INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
+# INDEX_TO_CHAR = {index: char for char, index in dataset.CHAR_TO_INDEX.items()}
+# INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 
 # Hyperparameters.
 BATCH_SIZE = 32
 NUM_EPOCHS = 200
 HIDDEN_SIZE = 256
-NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
+# NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
 BEZIER_CURVE_DEGREE = 5
 CROSS_VALIDATION = False
 REDUCTION = "mean"
@@ -176,11 +176,14 @@ def get_model_file_name(
     )
 
 
-def greedy_decode(indices: npt.NDArray[np.int_]) -> str:
+def greedy_decode(
+    *, indices: npt.NDArray[np.int_], index_to_char: dict[int, str]
+) -> str:
     """Greedy decode character indices to a string by squashing repeated characters.
 
     Args:
         indices (npt.NDArray[np.int_]): The character indices.
+        index_to_char (dict[int, str]): The index to character mapping.
 
     Returns:
         str: The decoded string.
@@ -198,11 +201,11 @@ def greedy_decode(indices: npt.NDArray[np.int_]) -> str:
     output = []
 
     for idx in indices:
-        if idx not in INDEX_TO_CHAR:
+        if idx not in index_to_char:
             raise ValueError(f"Index {idx} not found in INDEX_TO_CHAR.")
 
         curr_char = (
-            "" if idx == 0 else INDEX_TO_CHAR[idx]
+            "" if idx == 0 else index_to_char[idx]
         )  # Ignore the epsilon character.
 
         if curr_char != prev_char:
@@ -223,6 +226,7 @@ def _extract_load_datasets(
     dataset.StrokeBezierDataset,
     dataset.StrokeBezierDataset,
     dataset.StrokeBezierDataset,
+    dict[int, str],
 ]:
     """Extracts and loads the data from the IAM dataset.
 
@@ -233,7 +237,7 @@ def _extract_load_datasets(
     Returns:
         tuple[dataset.StrokeBezierDataset, dataset.StrokeBezierDataset, dataset.StrokeBezierDataset,
         dataset.StrokeBezierDataset]:
-            The training, validation, and test datasets.
+            The training, validation, test datasets and the index to character mapping.
     """
     extracted_data_path = extraction.get_extracted_data_file_path(
         with_cross_val=with_cross_val, bezier_degree=bezier_degree
@@ -275,7 +279,9 @@ def _extract_load_datasets(
         dataset_type=extraction.DatasetType.TEST,
     )
 
-    return train_cross_val, train_single_val, val_1, val_2, test
+    index_to_char = train_cross_val.get_index_to_char_mapping()
+
+    return train_cross_val, train_single_val, val_1, val_2, test, index_to_char
 
 
 def _create_data_loaders(
@@ -394,7 +400,11 @@ def _train_epoch(
 
 
 def _validate_epoch(
-    *, model: nn.Module, criterion: nn.CTCLoss, val_loader: DataLoader
+    *,
+    model: nn.Module,
+    criterion: nn.CTCLoss,
+    val_loader: DataLoader,
+    index_to_char: dict[int, str],
 ) -> tuple[float, float, float, float, float]:
     """Validates the model for one epoch on the given validation dataset.
 
@@ -402,6 +412,7 @@ def _validate_epoch(
         model (nn.Module): The model to validate.
         criterion (nn.CTCLoss): The CTC loss function.
         val_loader (DataLoader): The validation data loader.
+        index_to_char (dict[int, str]): The mapping from index to character.
 
     Returns:
         tuple[float, float, float, float, float]:
@@ -456,7 +467,7 @@ def _validate_epoch(
             labels_to_strings = [
                 "".join(
                     [
-                        INDEX_TO_CHAR[index]
+                        index_to_char[index]
                         for index in label.detach().cpu().numpy()
                     ]
                 )
@@ -470,7 +481,8 @@ def _validate_epoch(
             # Get the greedy search decodings for the current batch.
             greedy_predictions = logits.argmax(2).detach().cpu().numpy().T
             greedy_decodings = [
-                greedy_decode(prediction) for prediction in greedy_predictions
+                greedy_decode(indices=prediction, index_to_char=index_to_char)
+                for prediction in greedy_predictions
             ]
 
             # Get the beam search decodings for the current batch.
@@ -561,6 +573,7 @@ def _test_model(
     model: nn.Module,
     criterion: nn.CTCLoss,
     test_loader: DataLoader,
+    index_to_char: dict[int, str],
 ) -> tuple[float, float, float, float, float]:
     """Tests the model on the given test dataset.
 
@@ -568,6 +581,7 @@ def _test_model(
         model (nn.Module): The model to test.
         criterion (nn.CTCLoss): The CTC loss function.
         test_loader (DataLoader): The test data loader.
+        index_to_char (dict[int, str]): The mapping from index to character.
 
     Returns:
         tuple[float, float, float, float, float]:
@@ -627,7 +641,7 @@ def _test_model(
             labels_to_strings = [
                 "".join(
                     [
-                        INDEX_TO_CHAR[index]
+                        index_to_char[index]
                         for index in label.detach().cpu().numpy()
                     ]
                 )
@@ -755,6 +769,7 @@ def train_model(
         val_1_dataset,
         val_2_dataset,
         test_dataset,
+        index_to_char,
     ) = _extract_load_datasets(
         bezier_degree=bezier_curve_degree,
         with_cross_val=cross_validation,
@@ -789,7 +804,7 @@ def train_model(
     model = model_type.value(
         bezier_curve_dimension=bezier_curve_dimension,
         hidden_size=HIDDEN_SIZE,
-        num_classes=NUM_CLASSES,
+        num_classes=len(index_to_char),
         num_layers=num_layers,
         dropout=DROPOUT_RATE,
         bidirectional=bidirectional,
@@ -836,6 +851,7 @@ def train_model(
             model=model,
             criterion=criterion,
             val_loader=val_1_loader,
+            index_to_char=index_to_char,
         )
 
         if cross_validation:
@@ -849,6 +865,7 @@ def train_model(
                 model=model,
                 criterion=criterion,
                 val_loader=val_2_loader,
+                index_to_char=index_to_char,
             )
 
             # Calculate the average validation loss, CER and WER.
@@ -906,6 +923,7 @@ def train_model(
         model=model,
         criterion=criterion,
         test_loader=test_loader,
+        index_to_char=index_to_char,
     )
 
     wandb.log(

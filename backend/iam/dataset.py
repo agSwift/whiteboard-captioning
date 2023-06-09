@@ -1,5 +1,5 @@
 """Dataset for loading the extracted data from the IAM dataset."""
-import string
+# import string
 from typing import Optional
 
 import numpy as np
@@ -10,10 +10,12 @@ from sklearn.preprocessing import MinMaxScaler
 
 from iam import extraction
 
-CHAR_TO_INDEX = {
-    char: index + 1
-    for index, char in enumerate(string.ascii_letters + string.digits + " ")
-}
+# CHAR_TO_INDEX = {
+#     char: index + 1
+#     for index, char in enumerate(
+#         string.ascii_letters + string.digits + " " + ""
+#     )
+# }
 
 
 class StrokeBezierDataset(Dataset):
@@ -65,6 +67,15 @@ class StrokeBezierDataset(Dataset):
                 f"Invalid stroke data: {all_bezier_data}. "
                 f"Must contain {dataset_type_name}_labels."
             )
+        if "all_chars" not in all_bezier_data.files:
+            raise ValueError(
+                f"Invalid stroke data: {all_bezier_data}. "
+                f"Must contain all_chars."
+            )
+        all_chars = all_bezier_data["all_chars"]
+        self._char_to_index = {
+            char: index + 1 for index, char in enumerate(all_chars)
+        }
 
         # Load the bezier curves and labels.
         self.all_bezier_curves = torch.from_numpy(
@@ -92,18 +103,24 @@ class StrokeBezierDataset(Dataset):
 
         # The length of each label, prior to padding.
         self.target_lengths = torch.tensor(
-            [len(label) for label in all_bezier_data[f"{dataset_type_name}_labels"]],
+            [
+                len(label)
+                for label in all_bezier_data[f"{dataset_type_name}_labels"]
+            ],
             dtype=torch.long,
         )
 
         # The maximum length of a label.
         max_label_length = max(
-            len(label) for label in all_bezier_data[f"{dataset_type_name}_labels"]
+            len(label)
+            for label in all_bezier_data[f"{dataset_type_name}_labels"]
         )
         # Encode each label as a tensor of indices.
         self.labels = torch.stack(
             [
-                self._encode_label(label=label, max_label_length=max_label_length)
+                self._encode_label(
+                    label=label, max_label_length=max_label_length
+                )
                 for label in all_bezier_data[f"{dataset_type_name}_labels"]
             ]
         )
@@ -119,7 +136,9 @@ class StrokeBezierDataset(Dataset):
     def __getitem__(self, idx):
         return self.all_bezier_curves[idx], self.labels[idx]
 
-    def _encode_label(self, *, label: str, max_label_length: int) -> torch.Tensor:
+    def _encode_label(
+        self, *, label: str, max_label_length: int
+    ) -> torch.Tensor:
         """Encodes the given label as a tensor of indices based on CHAR_TO_INDEX.
 
         Filters out from the label any characters that are not in CHAR_TO_INDEX before
@@ -132,12 +151,27 @@ class StrokeBezierDataset(Dataset):
             torch.Tensor: The encoded label as a tensor of indices.
         """
         # Only keep alphabetic characters and spaces.
-        label = "".join([char for char in label if char in CHAR_TO_INDEX])
+        label = "".join(
+            [char for char in label if char in self._char_to_index]
+        )
 
         # Encode each character in the label as an index.
-        indices = [CHAR_TO_INDEX[char] for char in label]
+        indices = [self._char_to_index[char] for char in label]
 
         # Pad the label with -1 to make it the same length as the longest label.
         indices += [-1] * (max_label_length - len(indices))
 
         return torch.tensor(indices, dtype=torch.long)
+
+    def get_index_to_char_mapping(self):
+        """Returns the index to character mapping.
+
+        Returns:
+            dict: The index to character mapping.
+        """
+        index_to_char = {
+            index: char for char, index in self._char_to_index.items()
+        }
+        index_to_char[0] = "_"  # Epislon character.
+
+        return index_to_char

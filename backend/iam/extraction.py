@@ -122,16 +122,8 @@ def _get_line_from_labels_file(
                 + line_idx
                 + 1  # Add 1 to skip the blank line after the CSR line.
             ):
+                return line
                 # Only keep the characters that are in the IAM dataset.
-                filtered_line_chars = []
-
-                for char in line:
-                    if char.isalnum() or char == " ":
-                        filtered_line_chars.append(char)
-                    else:
-                        filtered_line_chars.append("")
-
-                return "".join(filtered_line_chars)
                 # return "".join(
                 #     [char for char in line if char.isalnum() or char == " "]
                 # )
@@ -538,6 +530,7 @@ def _convert_to_numpy_and_save(
     test_data: bezier_curves.BezierData,
     with_cross_val: bool,
     bezier_degree: int,
+    all_chars_arr: npt.NDArray[np.str_],
 ) -> None:
     """Convert the data to numpy arrays.
 
@@ -551,6 +544,7 @@ def _convert_to_numpy_and_save(
         test_data (bezier_curves.BezierData): The test data.
         with_cross_val (bool): Whether or not cross validation is being used.
         bezier_degree (int): The degree of the Bezier curves.
+        all_chars_arr (npt.NDArray[np.str_]): A numpy array containing all the characters.
 
     Returns:
         None.
@@ -667,6 +661,7 @@ def _convert_to_numpy_and_save(
         test_bezier_curves=test_bezier_curves,
         train_single_val_labels=train_single_val_labels,
         train_single_val_bezier_curves=train_single_val_bezier_curves,
+        all_chars=all_chars_arr,
     )
 
 
@@ -721,6 +716,8 @@ def extract_all_data(
     # Get the total number of directories to process.
     total_dirs = sum(1 for _ in os.walk(LINE_STROKES_DATA_DIR))
 
+    all_chars = set()
+
     # Go through each directory in the line strokes data directory.
     for root, _, stroke_files in tqdm(
         os.walk(LINE_STROKES_DATA_DIR),
@@ -769,6 +766,12 @@ def extract_all_data(
                 test_data=test_data,
             )
 
+            # Add the characters in the label to the set of all characters.
+            for char in line_label:
+                all_chars.add(char)
+
+    all_chars_arr = np.array(sorted(list(all_chars)))
+
     # Convert the data to numpy arrays and save it to a .npz file.
     # A larger training set is also created and saved in this step.
     _convert_to_numpy_and_save(
@@ -778,4 +781,5 @@ def extract_all_data(
         test_data=test_data,
         bezier_degree=bezier_degree,
         with_cross_val=with_cross_val,
+        all_chars_arr=all_chars_arr,
     )
