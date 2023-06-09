@@ -2,7 +2,7 @@ import React from "react";
 import "./ParameterSlider.css";
 
 const ParameterSlider = ({ min, max, value, setValue, label }) => {
-  const containerStyle = { width: "100%", padding: "0 20px" };
+  const containerStyle = { width: "50%", padding: "0 20px", margin: 'auto'};
   const sliderStyle = { width: "100%" };
   const labelStyle = {
     display: "flex",

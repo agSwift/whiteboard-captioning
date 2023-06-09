@@ -37,12 +37,13 @@ def post_data():
     ), "points_per_second must be an integer."
 
     (
-        prediction,
+        greedy_prediction,
+        beam_prediction,
         all_stroke_x_points,
         all_stroke_y_points,
         all_bezier_x_points,
         all_bezier_y_points,
-    ) = predict.greedy_predict(
+    ) = predict.predict_greedy_beam_labels(
         strokes=strokes,
         model_name=model_name,
         bezier_curve_degree=bezier_curve_degree,
@@ -53,7 +54,8 @@ def post_data():
 
     return jsonify(
         {
-            "prediction": prediction,
+            "greedy_prediction": greedy_prediction,
+            "beam_prediction": beam_prediction,
             "stroke_x_points": all_stroke_x_points,
             "stroke_y_points": all_stroke_y_points,
             "bezier_x_points": all_bezier_x_points,

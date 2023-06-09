@@ -19,7 +19,7 @@ const DrawingCanvas = ({
   });
   const [isNewStroke, setIsNewStroke] = useState(true);
 
-  useEffect(() => {
+  const Reset = () => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     const maxY = window.innerHeight / 2;
@@ -31,7 +31,10 @@ const DrawingCanvas = ({
     setMaxY(maxY);
     setMaxX(maxX);
     setCanvasContext(ctx);
-  }, [canvasRef]);
+    setStrokes([]);
+  };
+
+  useEffect(() => Reset(), [canvasRef]);
 
   const getCanvasX = (x) => x - canvasRef.current.offsetLeft;
 
@@ -111,16 +114,33 @@ const DrawingCanvas = ({
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      onMouseEnter={(e) => SetPos(e)}
-      onMouseMove={(e) => {
-        SetPos(e);
-        Draw(e);
-      }}
-      onMouseDown={(e) => SetPos(e)}
-      style={style}
-    />
+    <div style={{flexDirection: "column", display: "flex"}}>
+      <canvas
+        ref={canvasRef}
+        onMouseEnter={(e) => SetPos(e)}
+        onMouseMove={(e) => {
+          SetPos(e);
+          Draw(e);
+        }}
+        onMouseDown={(e) => SetPos(e)}
+        style={style}
+      />
+      <button
+        onClick={() => Reset()}
+        style={{
+          border: "2px solid black",
+          boxShadow: "none",
+          margin: "10px auto 0px auto",
+          padding: "10px",
+          borderRadius: "5px",
+          fontSize: "100%",
+          fontWeight: "bolder",
+          width: '10%',
+        }}
+      >
+        RESET
+      </button>
+    </div>
   );
 };
 

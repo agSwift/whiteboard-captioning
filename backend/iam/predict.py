@@ -5,82 +5,96 @@ import numpy as np
 import torch
 
 from iam import bezier_curves, dataset, extraction, train
+from fast_ctc_decode import beam_search
 
-# ALL_NUM_LAYERS = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-# ALL_BEZIER_CURVE_DEGREES = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 # ALL_MODEL_TYPES = list(train.ModelType)
 ALL_NUM_LAYERS = [3]
 ALL_BEZIER_CURVE_DEGREES = [5]
-ALL_MODEL_TYPES = [train.ModelType.LSTM]
+ALL_MODEL_TYPES = [
+    # train.ModelType.GRU,
+    # train.ModelType.RNN,
+    train.ModelType.LSTM,
+]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 @lru_cache(maxsize=1)
 def _load_models():
     loaded_models = {}
+    index_to_char = None
+    alphabet = None
 
     for model_type in ALL_MODEL_TYPES:
         for bezier_curve_degree in ALL_BEZIER_CURVE_DEGREES:
             for num_layers in ALL_NUM_LAYERS:
-                for bidirectional in [True]:
-                    # Create the model file name.
-                    model_file_name = train.get_model_file_name(
-                        model_name=model_type.name.lower(),
-                        bezier_curve_degree=bezier_curve_degree,
-                        num_layers=num_layers,
-                        bidirectional=bidirectional,
+                # Create the model file name.
+                model_file_name = train.get_model_file_name(
+                    model_name=model_type.name.lower(),
+                    bezier_curve_degree=bezier_curve_degree,
+                    num_layers=num_layers,
+                    bidirectional=True,
+                )
+
+                # Ensure the model exists.
+                model_path = Path(f"backend/iam/models/{model_file_name}.ckpt")
+                assert model_path.exists(), (
+                    f"Model {model_file_name} does not exist.\n"
+                    "Run train.py to train the model."
+                )
+
+                # Get the bezier curve dimension for the model.
+                extracted_data_path = extraction.get_extracted_data_file_path(
+                    with_cross_val=train.CROSS_VALIDATION,
+                    bezier_degree=bezier_curve_degree,
+                )
+                assert (
+                    extracted_data_path.exists()
+                ), f"Extracted data {extracted_data_path} does not exist.\n"
+                all_bezier_data = np.load(extracted_data_path)
+
+                train_cross_val_dataset = dataset.StrokeBezierDataset(
+                    all_bezier_data=all_bezier_data,
+                    dataset_type=extraction.DatasetType.TRAIN_CROSS_VAL,
+                )
+
+                # Get the index to char mapping and alphabet if not already loaded.
+                if index_to_char is None:
+                    index_to_char = (
+                        train_cross_val_dataset.get_index_to_char_mapping()
+                    )
+                    alphabet = "".join(
+                        [
+                            index_to_char[index]
+                            for index in sorted(
+                                index_to_char.keys()
+                            )  # Epsilon character at index 0 is included.
+                        ]
                     )
 
-                    # Ensure the model exists.
-                    model_path = Path(
-                        f"backend/iam/models/{model_file_name}.ckpt"
-                    )
-                    assert model_path.exists(), (
-                        f"Model {model_file_name} does not exist.\n"
-                        "Run train.py to train the model."
-                    )
+                # Load the model.
+                bezier_curve_dimension = (
+                    train_cross_val_dataset.all_bezier_curves[0].shape[-1]
+                )
+                model = model_type.value(
+                    bezier_curve_dimension=bezier_curve_dimension,
+                    hidden_size=train.HIDDEN_SIZE,
+                    num_classes=len(index_to_char),
+                    num_layers=num_layers,
+                    dropout=train.DROPOUT_RATE,
+                    bidirectional=True,
+                    device=DEVICE,
+                ).to(DEVICE)
+                model.load_state_dict(
+                    torch.load(model_path, map_location=DEVICE)
+                )
 
-                    # Get the bezier curve dimension for the model.
-                    extracted_data_path = (
-                        extraction.get_extracted_data_file_path(
-                            with_cross_val=train.CROSS_VALIDATION,
-                            bezier_degree=bezier_curve_degree,
-                        )
-                    )
-                    assert (
-                        extracted_data_path.exists()
-                    ), f"Extracted data {extracted_data_path} does not exist.\n"
-                    all_bezier_data = np.load(extracted_data_path)
+                # Add the model to the dictionary.
+                loaded_models[model_file_name] = model
 
-                    train_cross_val_dataset = dataset.StrokeBezierDataset(
-                        all_bezier_data=all_bezier_data,
-                        dataset_type=extraction.DatasetType.TRAIN_CROSS_VAL,
-                    )
-                    bezier_curve_dimension = (
-                        train_cross_val_dataset.all_bezier_curves[0].shape[-1]
-                    )
-
-                    # Load the model.
-                    model = model_type.value(
-                        bezier_curve_dimension=bezier_curve_dimension,
-                        hidden_size=train.HIDDEN_SIZE,
-                        num_classes=train.NUM_CLASSES,
-                        num_layers=num_layers,
-                        dropout=train.DROPOUT_RATE,
-                        bidirectional=bidirectional,
-                        device=DEVICE,
-                    ).to(DEVICE)
-                    model.load_state_dict(
-                        torch.load(model_path, map_location=DEVICE)
-                    )
-
-                    # Add the model to the dictionary.
-                    loaded_models[model_file_name] = model
-
-    return loaded_models
+    return loaded_models, index_to_char, alphabet
 
 
-LOADED_MODELS = _load_models()
+LOADED_MODELS, INDEX_TO_CHAR, ALPHABET = _load_models()
 
 
 def _get_downsampled_stroke_data(
@@ -157,17 +171,17 @@ def _get_downsampled_stroke_data(
     )
 
 
-def greedy_predict(
+def predict_greedy_beam_labels(
     strokes: list[list[dict[str, float]]],
     model_name: str,
     bezier_curve_degree: int,
     num_layers: int,
     bidirectional: bool,
     points_per_second: int,
-) -> tuple[str, list[float], list[float], list[float], list[float]]:
+) -> tuple[str, str, list[float], list[float], list[float], list[float]]:
     """Predict the characters in the strokes.
 
-    Uses greedy decoding to convert the logits to a string.
+    Uses greedy and beam search decoding to predict the characters in the strokes.
 
     Args:
         strokes (list[list[dict[str, float]]]): A list of strokes. Each stroke is a list of points.
@@ -179,8 +193,8 @@ def greedy_predict(
         points_per_second (int): The number of points to keep per second.
 
     Returns:
-        str, list[float], list[float], list[float], list[float]: A tuple containing the predicted
-            string and the x points and y points of the stroke points and bezier curves.
+        str, str, list[float], list[float], list[float], list[float]: A tuple containing the predicted
+            greedy and beam search strings, the x points and y points of the stroke points and bezier curves.
 
     Raises:
         ValueError: If the model name is invalid.
@@ -210,9 +224,6 @@ def greedy_predict(
 
         # Flip the y points so that the strokes are oriented correctly.
         y_points_shifted = [(max_y - min_y) - y for y in y_points_shifted]
-
-        # Flip the points in the x-axis.
-        # x_points_shifted = [(max_x - min_x) - x for x in x_points_shifted]
 
         # Scale so that the x and y points are between 0 and 1.
         scale_y = (
@@ -286,13 +297,33 @@ def greedy_predict(
         "Please run train.py to train the model."
     )
     model = LOADED_MODELS[trained_model_file_name]
-
-    # Predict the characters.
     logits = model(bezier_curves_data)
 
-    # Convert logits to characters.
+    # Get the greedy prediction.
     greedy_prediction = logits.argmax(2).detach().cpu().numpy().T
     greedy_prediction = greedy_prediction.squeeze(-1)
+    greedy_label = train.greedy_decode(
+        indices=greedy_prediction, index_to_char=INDEX_TO_CHAR
+    )
+    print("Greedy prediction:", greedy_label)
+
+    # Get the beam search prediction.
+    beam_predictions = logits.detach().cpu().numpy().transpose(1, 0, 2)
+
+    beam_decodings = []
+    for search_prediction in beam_predictions:
+        search_prediction_exp = np.exp(search_prediction)
+
+        beam_seq, _ = beam_search(
+            search_prediction_exp,
+            alphabet=ALPHABET,
+            beam_size=train.BEAM_SIZE,
+            beam_cut_threshold=train.BEAM_CUT_THRESHOLD,
+        )
+        beam_decodings.append(beam_seq)
+
+    beam_label = "".join(beam_decodings)
+    print("Beam search prediction:", beam_label)
 
     all_stroke_x_points = [
         stroke_data.x_points for stroke_data in all_stroke_data
@@ -301,9 +332,10 @@ def greedy_predict(
         stroke_data.y_points for stroke_data in all_stroke_data
     ]
 
-    # Return the predicted string and the x and y points of the strokes and bezier curves.
+    # Return the predicted strings and the x and y points of the strokes and bezier curves.
     return (
-        train.greedy_decode(greedy_prediction),
+        greedy_label,
+        beam_label,
         all_stroke_x_points,
         all_stroke_y_points,
         all_bezier_x_points,

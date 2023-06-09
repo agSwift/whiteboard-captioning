@@ -11,7 +11,8 @@ const PREDICTION_MODELS = ["RNN", "LSTM", "GRU"];
 const MAX_SAMPLING_RATE = 200;
 
 function App() {
-  const [predictedText, setPredictedText] = useState("Predicted text here");
+  const [greedyPredictedText, setGreedyPredictedText] = useState();
+  const [beamPredictedText, setBeamPredictedText] = useState();
 
   const [strokes, setStrokes] = useState([]);
   const [maxY, setMaxY] = useState(0);
@@ -50,7 +51,8 @@ function App() {
     })
       .then(async (response) => {
         const body = await response.json();
-        setPredictedText(body.prediction);
+        setBeamPredictedText(body.beam_prediction);
+        setGreedyPredictedText(body.greedy_prediction);
         setStrokeXPoints(body.stroke_x_points);
         setStrokeYPoints(body.stroke_y_points);
         setBezierXPoints(body.bezier_x_points);
@@ -74,10 +76,12 @@ function App() {
   const borderedDivStyle = {
     ...centeredDivStyle,
     border: "2px solid black",
-    width: "50%",
-    marginLeft: "25%",
+    width: "25%",
+    margin: '30px',
+    padding: '5px 10px',
     borderRadius: "10px",
-    fontSize: "200%",
+    fontSize: "150%",
+    textAlign: 'center',
   };
 
   return (
@@ -92,7 +96,10 @@ function App() {
           setMaxY={setMaxY}
         />
       </div>
-      <div style={borderedDivStyle}>{predictedText}</div>
+      <div style={centeredDivStyle}>
+        <input style={borderedDivStyle} placeholder="Beam Prediction" value={beamPredictedText} disabled/>
+        <input style={borderedDivStyle} placeholder="Greedy Prediction" value={greedyPredictedText} disabled/>
+      </div>
       <div style={centeredDivStyle}>
         <PredictButton onClick={SendData} />
       </div>
@@ -123,7 +130,7 @@ function App() {
           setValue={setBezierCurveDegree}
           label={"Bezier Curve Degree"}
         />
-        <ParameterSlider
+        {/* <ParameterSlider
           min={1}
           max={9}
           value={numLayers}
@@ -134,7 +141,7 @@ function App() {
           label={"Bidirectional?"}
           setValue={setBidirectional}
           value={bidirectional}
-        />
+        /> */}
       </div>
       <div style={centeredDivStyle}>
         {graphNumber < 0 ? null : (
@@ -164,4 +171,4 @@ function App() {
   );
 }
 
-export default App;
+export default App;

@@ -18,16 +18,16 @@ import wandb
 # Hyperparameters.
 BATCH_SIZE = 32
 NUM_EPOCHS = 200
-HIDDEN_SIZE = 256
+HIDDEN_SIZE = 512
 BEZIER_CURVE_DEGREE = 5
 CROSS_VALIDATION = False
 REDUCTION = "mean"
 NUM_LAYERS = 3
-DROPOUT_RATE = 0.4
+DROPOUT_RATE = 0.5
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
 PATIENCE = 10
-BEAM_SIZE = 3
+BEAM_SIZE = 30
 BEAM_CUT_THRESHOLD = 0.0
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
