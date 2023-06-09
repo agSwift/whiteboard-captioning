@@ -1,21 +1,9 @@
 """Dataset for loading the extracted data from the IAM dataset."""
-# import string
-from typing import Optional
-
-import numpy as np
 import torch
 from torch.utils.data import Dataset
 from numpy.lib.npyio import NpzFile
-from sklearn.preprocessing import MinMaxScaler
 
 from iam import extraction
-
-# CHAR_TO_INDEX = {
-#     char: index + 1
-#     for index, char in enumerate(
-#         string.ascii_letters + string.digits + " " + ""
-#     )
-# }
 
 
 class StrokeBezierDataset(Dataset):
@@ -25,14 +13,12 @@ class StrokeBezierDataset(Dataset):
         self,
         all_bezier_data: NpzFile,
         dataset_type: extraction.DatasetType,
-        scaler: Optional[MinMaxScaler] = None,
     ):
         """Initializes the StrokeBezierDataset class.
 
         Args:
             stroke_bezier_data (NpzFile): All the extracted stroke data.
             dataset_type (extraction.DatasetType): The type of dataset to load.
-            scaler (MinMaxScaler, optional): The scaler fitted to the training data.
 
         Raises:
             ValueError: If the dataset type is invalid.
@@ -48,10 +34,6 @@ class StrokeBezierDataset(Dataset):
             raise ValueError(
                 f"Invalid stroke data: {all_bezier_data}. "
                 f"Must be an instance of {NpzFile}."
-            )
-        if scaler is not None and not isinstance(scaler, MinMaxScaler):
-            raise ValueError(
-                f"Invalid scaler: {scaler}. Must be an instance of {MinMaxScaler}."
             )
 
         # Check that all_bezier_data contains the required data.
@@ -82,24 +64,6 @@ class StrokeBezierDataset(Dataset):
             all_bezier_data[f"{dataset_type_name}_bezier_curves"]
         ).float()
         self.max_num_bezier_curves = self.all_bezier_curves.shape[1]
-
-        # Scale bezier curves parameters using MinMaxScaler if provided.
-        if scaler is not None:
-            original_shape = self.all_bezier_curves.shape
-
-            # Reshape the bezier curves to 2D.
-            reshaped_all_bezier_curves = self.all_bezier_curves.reshape(
-                -1, self.all_bezier_curves.shape[-1]
-            )
-            # Scale the bezier curves.
-            transformed_bezier_curves = scaler.transform(
-                reshaped_all_bezier_curves
-            ).astype(np.float32)
-
-            # Reshape the bezier curves back to 3D.
-            self.all_bezier_curves = torch.from_numpy(
-                transformed_bezier_curves.reshape(original_shape)
-            )
 
         # The length of each label, prior to padding.
         self.target_lengths = torch.tensor(

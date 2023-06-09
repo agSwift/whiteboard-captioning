@@ -122,7 +122,7 @@ def _get_line_from_labels_file(
                 + line_idx
                 + 1  # Add 1 to skip the blank line after the CSR line.
             ):
-                return line
+                return "".join([char for char in line if char != "\n"])
                 # Only keep the characters that are in the IAM dataset.
                 # return "".join(
                 #     [char for char in line if char.isalnum() or char == " "]

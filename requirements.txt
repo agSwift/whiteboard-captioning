@@ -5,8 +5,7 @@ scipy
 jiwer
 wandb
 tqdm
-pyctcdecode
 scikit-learn
-https://github.com/kpu/kenlm/archive/master.zip
 flask
 flask-cors
+fast-ctc-decode

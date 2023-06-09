@@ -1,33 +1,24 @@
 """For training models on the IAM dataset."""
 import copy
-
-# import multiprocessing
 from enum import Enum
 from pathlib import Path
+
 import numpy as np
 import numpy.typing as npt
-
-# from pyctcdecode import build_ctcdecoder
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 
-# from sklearn.preprocessing import MinMaxScaler
-
 from iam import extraction, dataset, rnn
 
-# from ctcdecode import CTCBeamDecoder
+from fast_ctc_decode import beam_search, viterbi_search
 from jiwer import cer, wer
 import wandb
-
-# INDEX_TO_CHAR = {index: char for char, index in dataset.CHAR_TO_INDEX.items()}
-# INDEX_TO_CHAR[0] = "_"  # Epsilon character for CTC loss.
 
 # Hyperparameters.
 BATCH_SIZE = 32
 NUM_EPOCHS = 200
 HIDDEN_SIZE = 256
-# NUM_CLASSES = len(dataset.CHAR_TO_INDEX) + 1  # +1 for the epsilon character.
 BEZIER_CURVE_DEGREE = 5
 CROSS_VALIDATION = False
 REDUCTION = "mean"
@@ -36,26 +27,9 @@ DROPOUT_RATE = 0.4
 BIDIRECTIONAL = True
 LEARNING_RATE = 3e-4
 PATIENCE = 10
-BEAM_WIDTH = 4
+BEAM_SIZE = 3
+BEAM_CUT_THRESHOLD = 0.0
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# # TODO: Add new decoder or fix CTC decoding.
-# DECODER = build_ctcdecoder(
-#    labels=[INDEX_TO_CHAR.get(i) for i in range(1, NUM_CLASSES)],
-# )
-
-# DECODER = CTCBeamDecoder(
-#     [INDEX_TO_CHAR.get(i) for i in range(NUM_CLASSES)],
-#     model_path=None,
-#     alpha=0,
-#     beta=0,
-#     cutoff_top_n=100,
-#     cutoff_prob=1.0,
-#     beam_width=BEAM_WIDTH,
-#     num_processes=multiprocessing.cpu_count(),
-#     blank_id=0,
-#     log_probs_input=True,
-# )
 
 
 class ModelType(Enum):
@@ -251,12 +225,6 @@ def _extract_load_datasets(
     # Load the data.
     all_bezier_data = np.load(extracted_data_path)
 
-    # TODO: Record metrics when using MinMaxScaler.
-    # Fit MinMaxScaler on the training data.
-    # scaler = MinMaxScaler()
-    # train_bezier_curves = all_bezier_data["train_bezier_curves"].reshape(-1, 10)
-    # scaler.fit(train_bezier_curves)
-
     # Create the datasets.
     train_cross_val = dataset.StrokeBezierDataset(
         all_bezier_data=all_bezier_data,
@@ -405,7 +373,7 @@ def _validate_epoch(
     criterion: nn.CTCLoss,
     val_loader: DataLoader,
     index_to_char: dict[int, str],
-) -> tuple[float, float, float, float, float]:
+) -> tuple[float, float, float, float, float, float, float]:
     """Validates the model for one epoch on the given validation dataset.
 
     Args:
@@ -415,8 +383,8 @@ def _validate_epoch(
         index_to_char (dict[int, str]): The mapping from index to character.
 
     Returns:
-        tuple[float, float, float, float, float]:
-            The average validation loss, greedy CER, greedy WER, beam CER, and beam WER.
+        tuple[float, float, float, float, float, float, float]:
+            The average validation loss, and greedy, beam, viterbi CERs & WERs.
     """
     # Set the model to evaluation mode.
     model.eval()
@@ -428,6 +396,8 @@ def _validate_epoch(
     greedy_total_wer = 0.0
     beam_total_cer = 0.0
     beam_total_wer = 0.0
+    viterbi_total_cer = 0.0
+    viterbi_total_wer = 0.0
 
     # Evaluate the model on the validation dataset.
     with torch.no_grad():
@@ -485,64 +455,69 @@ def _validate_epoch(
                 for prediction in greedy_predictions
             ]
 
-            # Get the beam search decodings for the current batch.
-            # beam_predictions = logits.detach().cpu().numpy()
-            # beam_decodings = [
-            #     DECODER.decode(prediction, BEAM_WIDTH)
-            #     for prediction in beam_predictions
-            # ]
+            # Get the beam and viterbi search decodings for the current batch.
+            search_predictions = (
+                logits.detach().cpu().numpy().transpose(1, 0, 2)
+            )
+            alphabet = "".join(
+                [
+                    index_to_char[index]
+                    for index in sorted(
+                        index_to_char.keys()
+                    )  # Epsilon character at index 0 is included.
+                ]
+            )
 
-            # Transform from shape (seq_len, batch_size, feature_dim) to
-            # (batch_size, seq_len, feature_dim).
-            # beam_predictions = logits.detach().cpu().transpose(0, 1)
-            # print('beam_predictions.type', beam_predictions.dtype)
+            beam_decodings = []
+            viterbi_decodings = []
 
-            # print('beam_predictions.shape', beam_predictions.shape)
-            # print('target_lengths.shape', target_lengths.shape)
-            # print('target_lengths', target_lengths)
+            for search_prediction in search_predictions:
+                search_prediction_exp = np.exp(search_prediction)
 
-            # beam_results, _, _, _ = DECODER.decode(
-            #     beam_predictions
-            # )
-            # print('beam_results.shape', beam_results.shape)
+                beam_seq, _ = beam_search(
+                    search_prediction_exp,
+                    alphabet=alphabet,
+                    beam_size=BEAM_SIZE,
+                    beam_cut_threshold=BEAM_CUT_THRESHOLD,
+                )
+                viterbi_seq, _ = viterbi_search(
+                    search_prediction_exp, alphabet
+                )
 
-            # # Get the top beam results.
-            # top_beam_results = []
-            # for i in range(len(beam_results)):
-            #     target_length = target_lengths[i]
-            #     top_beam_result = beam_results[i, 0, :target_length]
-            #     top_beam_results.append(top_beam_result)
-
-            #     # print('target_length', target_length)
-            #     print('top_beam_result.shape', top_beam_result.shape)
-            #     # print('top_beam_result', top_beam_result)
-            #     # print()
-            #     # print()
-
-            # beam_decodings = [
-            #     "".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result])
-            #     for beam_result in top_beam_results
-            # ]
-            # exit()
+                beam_decodings.append(beam_seq)
+                viterbi_decodings.append(viterbi_seq)
 
             # Calculate the CERs and WERs for the current batch.
-            for i, (label, greedy_decoding, beam_decoding) in enumerate(
-                zip(labels_to_strings, greedy_decodings, ["beam_decoding"])
+            for i, (
+                label,
+                greedy_decoding,
+                beam_decoding,
+                viterbi_decoding,
+            ) in enumerate(
+                zip(
+                    labels_to_strings,
+                    greedy_decodings,
+                    beam_decodings,
+                    viterbi_decodings,
+                )
             ):
                 num_samples += 1
-                # assert len(label) == len(beam_decoding)
 
                 # Calculate the CERs and WERs for the current sample.
                 greedy_cer = cer(label, greedy_decoding)
                 greedy_wer = wer(label, greedy_decoding)
                 beam_cer = cer(label, beam_decoding)
                 beam_wer = wer(label, beam_decoding)
+                viterbi_cer = cer(label, viterbi_decoding)
+                viterbi_wer = wer(label, viterbi_decoding)
 
                 # Accumulate the CERs and WERs.
                 greedy_total_cer += greedy_cer
                 greedy_total_wer += greedy_wer
                 beam_total_cer += beam_cer
                 beam_total_wer += beam_wer
+                viterbi_total_cer += viterbi_cer
+                viterbi_total_wer += viterbi_wer
 
                 # Print the first sample in the batch.
                 if i == 0:
@@ -554,6 +529,9 @@ def _validate_epoch(
                     print(f"Beam Decoding Prediction: {beam_decoding}")
                     print(f"Beam Decoding CER: {beam_cer:.4f}")
                     print(f"Beam Decoding WER: {beam_wer:.4f}")
+                    print(f"Viterbi Decoding Prediction: {viterbi_decoding}")
+                    print(f"Viterbi Decoding CER: {viterbi_cer:.4f}")
+                    print(f"Viterbi Decoding WER: {viterbi_wer:.4f}")
                     print("-" * 50)
                     print()
                     print()
@@ -565,6 +543,8 @@ def _validate_epoch(
         greedy_total_wer / num_samples,
         beam_total_cer / num_samples,
         beam_total_wer / num_samples,
+        viterbi_total_cer / num_samples,
+        viterbi_total_wer / num_samples,
     )
 
 
@@ -574,7 +554,7 @@ def _test_model(
     criterion: nn.CTCLoss,
     test_loader: DataLoader,
     index_to_char: dict[int, str],
-) -> tuple[float, float, float, float, float]:
+) -> tuple[float, float, float, float, float, float, float]:
     """Tests the model on the given test dataset.
 
     Args:
@@ -584,9 +564,8 @@ def _test_model(
         index_to_char (dict[int, str]): The mapping from index to character.
 
     Returns:
-        tuple[float, float, float, float, float]:
-            The average test loss, greedy decoding CER, greedy decoding WER,
-            beam decoding CER, and beam decoding WER.
+        tuple[float, float, float, float, float, float, float]:
+            The average test loss, and greedy, beam, viterbi CERs & WERs.
     """
     # Set the model to evaluation mode.
     model.eval()
@@ -598,6 +577,8 @@ def _test_model(
     greedy_total_wer = 0.0
     beam_total_cer = 0.0
     beam_total_wer = 0.0
+    viterbi_total_cer = 0.0
+    viterbi_total_wer = 0.0
 
     # Evaluate the model on the test dataset.
     with torch.no_grad():
@@ -655,47 +636,68 @@ def _test_model(
                 for prediction in greedy_predictions
             ]
 
-            # Get the beam search decodings for the current batch.
-            # beam_predictions = logits.detach().cpu().numpy()
-            # beam_decodings = [
-            #     DECODER.decode(prediction, BEAM_WIDTH)
-            #     for prediction in beam_predictions
-            # ]
+            # Get the beam and viterbi search decodings for the current batch.
+            search_predictions = (
+                logits.detach().cpu().numpy().transpose(1, 0, 2)
+            )
+            alphabet = "".join(
+                [
+                    index_to_char[index]
+                    for index in sorted(
+                        index_to_char.keys()
+                    )  # Epsilon character at index 0 is included.
+                ]
+            )
 
-            # # Transform from shape (seq_len, batch_size, feature_dim) to
-            # # (batch_size, seq_len, feature_dim).
-            # beam_predictions = logits.detach().cpu().transpose(0, 1)
-            # beam_results, _, _, _ = DECODER.decode(beam_predictions, target_lengths)
+            beam_decodings = []
+            viterbi_decodings = []
 
-            # # Get the top beam results.
-            # top_beam_results = []
-            # for i in range(len(beam_results)):
-            #     target_length = target_lengths[i]
-            #     top_beam_result = beam_results[i, 0, :target_length]
-            #     top_beam_results.append(top_beam_result)
+            for search_prediction in search_predictions:
+                search_prediction_exp = np.exp(search_prediction)
 
-            # beam_decodings = [
-            #     "".join([INDEX_TO_CHAR[idx.item()] for idx in beam_result])
-            #     for beam_result in top_beam_results
-            # ]
+                beam_seq, _ = beam_search(
+                    search_prediction_exp,
+                    alphabet=alphabet,
+                    beam_size=BEAM_SIZE,
+                    beam_cut_threshold=BEAM_CUT_THRESHOLD,
+                )
+                viterbi_seq, _ = viterbi_search(
+                    search_prediction_exp, alphabet
+                )
 
-            for i, (label, greedy_decoding, beam_decoding) in enumerate(
-                zip(labels_to_strings, greedy_decodings, ["beam_decoding"])
+                beam_decodings.append(beam_seq)
+                viterbi_decodings.append(viterbi_seq)
+
+            for i, (
+                label,
+                greedy_decoding,
+                beam_decoding,
+                viterbi_decoding,
+            ) in enumerate(
+                zip(
+                    labels_to_strings,
+                    greedy_decodings,
+                    beam_decodings,
+                    viterbi_decodings,
+                )
             ):
                 num_samples += 1
-                # assert len(beam_decoding) == len(label)
 
                 # Calculate the CERs and WERs for the current sample.
                 greedy_cer = cer(label, greedy_decoding)
                 greedy_wer = wer(label, greedy_decoding)
                 beam_cer = cer(label, beam_decoding)
                 beam_wer = wer(label, beam_decoding)
+                viterbi_cer = cer(label, viterbi_decoding)
+                viterbi_wer = wer(label, viterbi_decoding)
 
                 # Accumulate the CERs and WERs.
                 greedy_total_cer += greedy_cer
                 greedy_total_wer += greedy_wer
                 beam_total_cer += beam_cer
                 beam_total_wer += beam_wer
+                viterbi_total_cer += viterbi_cer
+                viterbi_total_wer += viterbi_wer
 
                 # Print the first sample in the batch.
                 if i == 0:
@@ -707,6 +709,9 @@ def _test_model(
                     print(f"Beam Decoding Prediction: {beam_decoding}")
                     print(f"Beam Decoding CER: {beam_cer:.4f}")
                     print(f"Beam Decoding WER: {beam_wer:.4f}")
+                    print(f"Viterbi Decoding Prediction: {viterbi_decoding}")
+                    print(f"Viterbi Decoding CER: {viterbi_cer:.4f}")
+                    print(f"Viterbi Decoding WER: {viterbi_wer:.4f}")
                     print("-" * 50)
                     print()
                     print()
@@ -718,6 +723,8 @@ def _test_model(
         greedy_total_wer / num_samples,
         beam_total_cer / num_samples,
         beam_total_wer / num_samples,
+        viterbi_total_cer / num_samples,
+        viterbi_total_wer / num_samples,
     )
 
 
@@ -760,7 +767,8 @@ def train_model(
             "dropout_rate": DROPOUT_RATE,
             "bidirectional": bidirectional,
             "patience": PATIENCE,
-            "beam_width": BEAM_WIDTH,
+            "beam_size": BEAM_SIZE,
+            "beam_cut_threshold": BEAM_CUT_THRESHOLD,
             "device": DEVICE,
         },
     )
@@ -848,6 +856,8 @@ def train_model(
             val_1_greedy_wer,
             val_1_beam_cer,
             val_1_beam_wer,
+            val_1_viterbi_cer,
+            val_1_viterbi_wer,
         ) = _validate_epoch(
             model=model,
             criterion=criterion,
@@ -862,6 +872,8 @@ def train_model(
                 val_2_greedy_wer,
                 val_2_beam_cer,
                 val_2_beam_wer,
+                val_2_viterbi_cer,
+                val_2_viterbi_wer,
             ) = _validate_epoch(
                 model=model,
                 criterion=criterion,
@@ -879,6 +891,12 @@ def train_model(
             ) / 2
             avg_epoch_val_beam_cer = (val_1_beam_cer + val_2_beam_cer) / 2
             avg_epoch_val_beam_wer = (val_1_beam_wer + val_2_beam_wer) / 2
+            avg_epoch_val_viterbi_cer = (
+                val_1_viterbi_cer + val_2_viterbi_cer
+            ) / 2
+            avg_epoch_val_viterbi_wer = (
+                val_1_viterbi_wer + val_2_viterbi_wer
+            ) / 2
         else:
             # Calculate the average validation loss, CER and WER.
             avg_epoch_val_loss = val_1_loss
@@ -886,6 +904,8 @@ def train_model(
             avg_epoch_val_greedy_wer = val_1_greedy_wer
             avg_epoch_val_beam_cer = val_1_beam_cer
             avg_epoch_val_beam_wer = val_1_beam_wer
+            avg_epoch_val_viterbi_cer = val_1_viterbi_cer
+            avg_epoch_val_viterbi_wer = val_1_viterbi_wer
 
         # Log the average validation loss, CERs, and WERs to Weights & Biases.
         wandb.log(
@@ -895,6 +915,8 @@ def train_model(
                 "Validation - Greedy Decoding WER - Per Epoch Average": avg_epoch_val_greedy_wer,
                 "Validation - Beam Decoding CER - Per Epoch Average": avg_epoch_val_beam_cer,
                 "Validation - Beam Decoding WER - Per Epoch Average": avg_epoch_val_beam_wer,
+                "Validation - Viterbi Decoding CER - Per Epoch Average": avg_epoch_val_viterbi_cer,
+                "Validation - Viterbi Decoding WER - Per Epoch Average": avg_epoch_val_viterbi_wer,
             },
             step=epoch,
         )
@@ -906,7 +928,9 @@ def train_model(
             f"Val Greedy CER: {avg_epoch_val_greedy_cer:.4f}, "
             f"Val Greedy WER: {avg_epoch_val_greedy_wer:.4f}, "
             f"Val Beam CER: {avg_epoch_val_beam_cer:.4f}, "
-            f"Val Beam WER: {avg_epoch_val_beam_wer:.4f}"
+            f"Val Beam WER: {avg_epoch_val_beam_wer:.4f}, "
+            f"Val Viterbi CER: {avg_epoch_val_viterbi_cer:.4f}, "
+            f"Val Viterbi WER: {avg_epoch_val_viterbi_wer:.4f}"
         )
 
         if early_stopping(model, avg_epoch_val_loss):
@@ -920,6 +944,8 @@ def train_model(
         test_avg_greedy_wer,
         test_avg_beam_cer,
         test_avg_beam_wer,
+        test_avg_viterbi_cer,
+        test_avg_viterbi_wer,
     ) = _test_model(
         model=model,
         criterion=criterion,
@@ -934,6 +960,8 @@ def train_model(
             "Test - Average Greedy WER": test_avg_greedy_wer,
             "Test - Average Beam CER": test_avg_beam_cer,
             "Test - Average Beam WER": test_avg_beam_wer,
+            "Test - Average Viterbi CER": test_avg_viterbi_cer,
+            "Test - Average Viterbi WER": test_avg_viterbi_wer,
         }
     )
 
@@ -943,6 +971,8 @@ def train_model(
         f"Test Average Greedy WER: {test_avg_greedy_wer:.4f}, "
         f"Test Average Beam CER: {test_avg_beam_cer:.4f}, "
         f"Test Average Beam WER: {test_avg_beam_wer:.4f}"
+        f"Test Average Viterbi CER: {test_avg_viterbi_cer:.4f}, "
+        f"Test Average Viterbi WER: {test_avg_viterbi_wer:.4f}"
     )
 
     # Create a models directory if it doesn't exist.
