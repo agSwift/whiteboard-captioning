@@ -651,7 +651,8 @@ def _test_model(
             # Get the greedy search decodings for the current batch.
             greedy_predictions = logits.argmax(2).detach().cpu().numpy().T
             greedy_decodings = [
-                greedy_decode(prediction) for prediction in greedy_predictions
+                greedy_decode(indices=prediction, index_to_char=index_to_char)
+                for prediction in greedy_predictions
             ]
 
             # Get the beam search decodings for the current batch.
