@@ -15,7 +15,7 @@ import wandb
 # Hyperparameters.
 BATCH_SIZE = 32
 INPUT_SIZE = 2  # x and y coordinates.
-HIDDEN_SIZE = 256
+HIDDEN_SIZE = 32
 NUM_CLASSES = len(dataset.ALL_CHARS)
 NUM_LAYERS = 2
 NUM_EPOCHS = 8

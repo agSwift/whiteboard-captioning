@@ -123,9 +123,18 @@ def _get_line_from_labels_file(
                 + 1  # Add 1 to skip the blank line after the CSR line.
             ):
                 # Only keep the characters that are in the IAM dataset.
-                return "".join(
-                    [char for char in line if char.isalnum() or char == " "]
-                )
+                filtered_line_chars = []
+
+                for char in line:
+                    if char.isalnum() or char == " ":
+                        filtered_line_chars.append(char)
+                    else:
+                        filtered_line_chars.append("")
+
+                return "".join(filtered_line_chars)
+                # return "".join(
+                #     [char for char in line if char.isalnum() or char == " "]
+                # )
 
     # If we have not found the line label, return None.
     return None
