@@ -244,7 +244,7 @@ def _bernstein_poly(i: int, n: int, t: np.float64) -> np.float64:
 
 
 def _bezier_curve(
-    control_points: list[list[float]], num_time_steps: int = 1000
+    *, control_points: list[list[float]], num_time_steps: int = 1000
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Given a set of control points, return the bezier curve defined by the control points.
@@ -315,7 +315,9 @@ def _plot_stroke_and_bezier_curve(
 
 def fit_stroke_with_bezier_curve(
     *, stroke: StrokeData, degree: int
-) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], np.ndarray]:
+) -> tuple[
+    npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float_]
+]:
     """Processes the stroke data and fits it with a Bezier curve.
 
     Args:
@@ -323,9 +325,9 @@ def fit_stroke_with_bezier_curve(
         degree (int): The degree of the Bezier curve.
 
     Returns:
-        Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], np.ndarray]: Tuple containing
-            features of the bezier curve, the x and y coordinates of the points
-            on the Bezier curve.
+        Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float_]]:
+            Tuple containing the x and y coordinates of the points on the Bezier curve,
+            and the features of the bezier curve.
     """
 
     # Check the stroke data.
@@ -369,7 +371,7 @@ def fit_stroke_with_bezier_curve(
         x_points=stroke.x_points, y_points=stroke.y_points, degree=degree
     )
     bezier_x_points, bezier_y_points = _bezier_curve(
-        bezier_control_points, num_time_steps=1000
+        control_points=bezier_control_points, num_time_steps=1000
     )
 
     # Plot the stroke data and the Bezier curve.
@@ -494,7 +496,7 @@ def fit_stroke_with_bezier_curve(
         (len(end_point_diff) == 2)
         and (len(control_point_distributions) == degree)
         and (len(angles) == degree)
-        # and (len(time_coefficients) == degree - 1)
+        and (len(time_coefficients) == degree - 1)
         and num_fitted_curve_features == expected_num_features
     ), "Invalid number of features for the fitted Bezier curve."
 
@@ -517,11 +519,11 @@ def fit_stroke_with_bezier_curve(
                 pen_up_flag,
             ]
         ).reshape(1, -1),
-    )  # Will be a 2D array with the resulting shape (1, num_fitted_curve_features).
+    )  # Will be a 2D array with the resulting shape (1, expected_num_features).
 
 
 def _bezier_curve_derivative(
-    control_points: list[list[float]], num_time_steps: int = 50
+    *, control_points: list[list[float]], num_time_steps: int = 50
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Get the derivative of the Bezier curve defined by the control points.
@@ -578,7 +580,7 @@ def _plot_stroke_and_bezier_curve_veloc_acc(
     num_time_steps = 20
 
     bezier_x_points, bezier_y_points = _bezier_curve(
-        bezier_control_points, num_time_steps=num_time_steps
+        control_points=bezier_control_points, num_time_steps=num_time_steps
     )
     plt.plot(bezier_x_points, bezier_y_points, "b-", label="Bezier Curve")
 
@@ -587,13 +589,13 @@ def _plot_stroke_and_bezier_curve_veloc_acc(
         bezier_velocity_x_points,
         bezier_velocity_y_points,
     ) = _bezier_curve_derivative(
-        bezier_control_points, num_time_steps=num_time_steps
+        control_points=bezier_control_points, num_time_steps=num_time_steps
     )
     (
         bezier_acceleration_x_points,
         bezier_acceleration_y_points,
     ) = _bezier_curve_derivative(
-        [
+        control_points=[
             [x, y]
             for x, y in zip(bezier_velocity_x_points, bezier_velocity_y_points)
         ],
@@ -629,13 +631,17 @@ def _plot_stroke_and_bezier_curve_veloc_acc(
 
 def fit_stroke_with_bezier_curve_veloc_acc(
     *, stroke: StrokeData, degree: int
-) -> npt.NDArray[np.float_]:
+) -> tuple[
+    npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float_]
+]:
     """Processes the stroke data and fits it with a Bezier curve.
     Args:
         stroke (StrokeData): The stroke data.
         degree (int): The degree of the Bezier curve.
     Returns:
-        A numpy array containing the calculated Bezier curve information.
+        Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float_]]:
+            Tuple containing features of the bezier curve, the x and y coordinates of
+            the points on the Bezier curve.
     Raises:
         ValueError: If the stroke data is invalid.
         ValueError: If the degree is invalid.
@@ -647,28 +653,94 @@ def fit_stroke_with_bezier_curve_veloc_acc(
     if not isinstance(degree, int):
         raise ValueError(f"Invalid degree: {degree}. Must be an integer.")
 
-    expected_num_bezier_curve_features = expected_num_bezier_curve_features = (
-        2 + degree + degree + (degree - 1) + 1 + 8
+    expected_num_features = (
+        1  # 1 Total length.
+        + 1  # 1 Directness.
+        + 1  # 1 Total curvature.
+        + 4  # Average sin/direction and curvature values.
+        + 2  # End point diff.
+        + degree  # Control point distributions.
+        + degree  # Angles.
+        + (degree - 1)  # Time coefficients.
+        + 1  # Pen-up flag.
+        + 4  # Velocity.
+        + 4  # Acceleration.
     )
-
     # Check if the stroke data has enough points.
     if len(stroke.x_points) < degree + 1:
-        return np.zeros((1, expected_num_bezier_curve_features))
+        return (
+            np.empty(
+                [
+                    1,
+                ]
+            ),
+            np.empty(
+                [
+                    1,
+                ]
+            ),
+            np.zeros((1, expected_num_features)),
+        )
     # Get the Bezier control points for the stroke data.
     bezier_control_points = _get_bezier_control_points(
         x_points=stroke.x_points, y_points=stroke.y_points, degree=degree
     )
+    bezier_x_points, bezier_y_points = _bezier_curve(
+        control_points=bezier_control_points, num_time_steps=1000
+    )
+
+    # Compute total length of the stroke.
+    total_length = np.sum(
+        np.sqrt(np.diff(stroke.x_points) ** 2 + np.diff(stroke.y_points) ** 2)
+    )
+
+    # Compute directness of the stroke.
+    direct_distance = np.sqrt(
+        (stroke.x_points[-1] - stroke.x_points[0]) ** 2
+        + (stroke.y_points[-1] - stroke.y_points[0]) ** 2
+    )
+    directness = direct_distance / total_length if total_length != 0 else 0
+
+    # Interpolate the stroke data for evenly spaced time points.
+    t_interp = np.linspace(
+        stroke.time_stamps[0], stroke.time_stamps[-1], len(stroke.time_stamps)
+    )
+    x_interp_func = interp1d(stroke.time_stamps, stroke.x_points)
+    y_interp_func = interp1d(stroke.time_stamps, stroke.y_points)
+    x_interp = x_interp_func(t_interp)
+    y_interp = y_interp_func(t_interp)
+
+    # Compute total curvature of the stroke with interpolated data.
+    dx = np.diff(x_interp)
+    dy = np.diff(y_interp)
+
+    # Compute the direction of the stroke.
+    direction = np.arctan2(dy, dx)
+    sin_direction = np.sin(direction)
+    cos_direction = np.cos(direction)
+    avg_sin_direction = np.mean(sin_direction)
+    avg_cos_direction = np.mean(cos_direction)
+
+    # Compute the curvature of the stroke.
+    curvature = np.abs(np.diff(direction))
+    total_curvature = np.sum(curvature)
+    sin_curvature = np.sin(curvature)
+    cos_curvature = np.cos(curvature)
+    avg_sin_curvature = np.mean(sin_curvature)
+    avg_cos_curvature = np.mean(cos_curvature)
 
     # Compute the derivatives of the Bezier curve (velocity and acceleration).
     (
         bezier_velocity_x_points,
         bezier_velocity_y_points,
-    ) = _bezier_curve_derivative(bezier_control_points, num_time_steps=100)
+    ) = _bezier_curve_derivative(
+        control_points=bezier_control_points, num_time_steps=100
+    )
     (
         bezier_acceleration_x_points,
         bezier_acceleration_y_points,
     ) = _bezier_curve_derivative(
-        [
+        control_points=[
             [x, y]
             for x, y in zip(bezier_velocity_x_points, bezier_velocity_y_points)
         ],
@@ -703,14 +775,10 @@ def fit_stroke_with_bezier_curve_veloc_acc(
     acceleration_mean_angle = circmean(acceleration_angles)
     acceleration_angular_dispersion = circstd(acceleration_angles)
 
-    bezier_x_points, bezier_y_points = _bezier_curve(
-        bezier_control_points, num_time_steps=1000
-    )
-
     # Plot the stroke data and the Bezier curve.
-    _plot_stroke_and_bezier_curve_veloc_acc(
-        stroke_data=stroke, bezier_control_points=bezier_control_points
-    )
+    # _plot_stroke_and_bezier_curve_veloc_acc(
+    #     stroke_data=stroke, bezier_control_points=bezier_control_points
+    # )
 
     # Compute the distance between end points (first and last control points).
     end_point_diff = np.array(
@@ -762,28 +830,40 @@ def fit_stroke_with_bezier_curve_veloc_acc(
     )
     # Determine if the stroke is a pen-up or pen-down curve.
     pen_up_flag = stroke.pen_ups[-1]  # 1 if pen-up, 0 if pen-down.
+
     num_fitted_curve_features = (
-        len(end_point_diff)
+        1  # Adding 1 for total length.
+        + 1  # Adding 1 for directness.
+        + 1  # Adding 1 for total curvature.
+        + 4  # Adding 4 for average sin_direction, cos_direction, sin_curvature, cos_curvature.
+        + len(end_point_diff)
         + len(control_point_distributions)
         + len(angles)
         + len(time_coefficients)
-        + pen_up_flag
-        + 8  # Adding 8 for velocity and acceleration (mean, std, mean angle, angular dispersion).
+        + 1  # Adding 1 for pen-up flag.
+        + 4  # Adding 4 for velocity features.
+        + 4  # Adding 4 for acceleration features.
     )
-
     assert (
         (len(end_point_diff) == 2)
         and (len(control_point_distributions) == degree)
         and (len(angles) == degree)
         and (len(time_coefficients) == degree - 1)
-        and (pen_up_flag == 1)
-        and num_fitted_curve_features == expected_num_bezier_curve_features
+        and num_fitted_curve_features == expected_num_features
     ), "Invalid number of features for the fitted Bezier curve."
+
     return (
         bezier_x_points,
         bezier_y_points,
         np.array(
             [
+                total_length,
+                directness,
+                total_curvature,
+                avg_sin_direction,
+                avg_cos_direction,
+                avg_sin_curvature,
+                avg_cos_curvature,
                 *end_point_diff,
                 *control_point_distributions.reshape(-1),
                 *angles.reshape(-1),
@@ -800,7 +880,7 @@ def fit_stroke_with_bezier_curve_veloc_acc(
             ]
         ).reshape(
             1, -1
-        ),  # Will be a 2D array with shape (1, expected_num_bezier_curve_features).
+        ),  # Will be a 2D array with shape (1, expected_num_features).
     )
 
 
