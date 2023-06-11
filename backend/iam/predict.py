@@ -193,8 +193,9 @@ def predict_greedy_beam_labels(
         points_per_second (int): The number of points to keep per second.
 
     Returns:
-        str, str, list[float], list[float], list[float], list[float]: A tuple containing the predicted
-            greedy and beam search strings, the x points and y points of the stroke points and bezier curves.
+        str, str, list[float], list[float], list[float], list[float]: 
+            A tuple containing the predicted greedy and beam search strings,
+            the x points and y points of the stroke points and bezier curves.
 
     Raises:
         ValueError: If the model name is invalid.

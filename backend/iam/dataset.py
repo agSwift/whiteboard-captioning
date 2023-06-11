@@ -114,7 +114,7 @@ class StrokeBezierDataset(Dataset):
         Returns:
             torch.Tensor: The encoded label as a tensor of indices.
         """
-        # Only keep alphabetic characters and spaces.
+        # Filter out any characters that are not in CHAR_TO_INDEX.
         label = "".join(
             [char for char in label if char in self._char_to_index]
         )
