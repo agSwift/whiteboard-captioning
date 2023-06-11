@@ -747,7 +747,7 @@ def extract_all_data(
                     _,
                     _,
                     bezier_curve_features,
-                ) = bezier_curves.fit_stroke_with_bezier_curve(
+                ) = bezier_curves.fit_stroke_with_bezier_curve_veloc_acc(
                     stroke=stroke, degree=bezier_degree
                 )
                 bezier_curves_data.append(bezier_curve_features)
