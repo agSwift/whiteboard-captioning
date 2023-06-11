@@ -344,7 +344,7 @@ def fit_stroke_with_bezier_curve(
         + 2  # End point diff.
         + degree  # Control point distributions.
         + degree  # Angles.
-        + (degree - 1)  # Time coefficients.
+        # + (degree - 1)  # Time coefficients.
         + 1  # Pen-up flag.
     )
 
@@ -373,12 +373,12 @@ def fit_stroke_with_bezier_curve(
     )
 
     # Plot the stroke data and the Bezier curve.
-    _plot_stroke_and_bezier_curve(
-        stroke_data=stroke,
-        bezier_control_points=bezier_control_points,
-        bezier_x_points=bezier_x_points,
-        bezier_y_points=bezier_y_points,
-    )
+    # _plot_stroke_and_bezier_curve(
+    #     stroke_data=stroke,
+    #     bezier_control_points=bezier_control_points,
+    #     bezier_x_points=bezier_x_points,
+    #     bezier_y_points=bezier_y_points,
+    # )
 
     # Compute total length of the stroke.
     total_length = np.sum(
@@ -468,12 +468,12 @@ def fit_stroke_with_bezier_curve(
     if time_range == 0:
         time_range = 1e-9
 
-    time_coefficients = np.array(
-        [
-            (stroke.time_stamps[i] - np.min(stroke.time_stamps)) / time_range
-            for i in range(1, len(bezier_control_points) - 1)
-        ]
-    )
+    # time_coefficients = np.array(
+    #     [
+    #         (stroke.time_stamps[i] - np.min(stroke.time_stamps)) / time_range
+    #         for i in range(1, len(bezier_control_points) - 1)
+    #     ]
+    # )
 
     # Determine if the stroke is a pen-up or pen-down curve.
     pen_up_flag = stroke.pen_ups[-1]  # 1 if pen-up, 0 if pen-down.
@@ -486,7 +486,7 @@ def fit_stroke_with_bezier_curve(
         + len(end_point_diff)
         + len(control_point_distributions)
         + len(angles)
-        + len(time_coefficients)
+        # + len(time_coefficients)
         + 1  # Adding 1 for pen-up flag.
     )
 
@@ -494,7 +494,7 @@ def fit_stroke_with_bezier_curve(
         (len(end_point_diff) == 2)
         and (len(control_point_distributions) == degree)
         and (len(angles) == degree)
-        and (len(time_coefficients) == degree - 1)
+        # and (len(time_coefficients) == degree - 1)
         and num_fitted_curve_features == expected_num_features
     ), "Invalid number of features for the fitted Bezier curve."
 
@@ -513,7 +513,7 @@ def fit_stroke_with_bezier_curve(
                 *end_point_diff,
                 *control_point_distributions.reshape(-1),
                 *angles.reshape(-1),
-                *time_coefficients,
+                # *time_coefficients,
                 pen_up_flag,
             ]
         ).reshape(1, -1),
