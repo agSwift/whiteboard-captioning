@@ -16,18 +16,18 @@ from jiwer import cer, wer
 import wandb
 
 # Hyperparameters.
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 NUM_EPOCHS = 200
-HIDDEN_SIZE = 512
-BEZIER_CURVE_DEGREE = 5
+HIDDEN_SIZE = 256
+BEZIER_CURVE_DEGREE = 4
 CROSS_VALIDATION = False
 REDUCTION = "mean"
-NUM_LAYERS = 3
-DROPOUT_RATE = 0.5
+NUM_LAYERS = 4
+DROPOUT_RATE = 0.3
 BIDIRECTIONAL = True
-LEARNING_RATE = 3e-4
+LEARNING_RATE = 7e-4
 PATIENCE = 10
-BEAM_SIZE = 30
+BEAM_SIZE = 3
 BEAM_CUT_THRESHOLD = 0.0
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
