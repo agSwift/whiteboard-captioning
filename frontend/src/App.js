@@ -19,8 +19,8 @@ function App() {
   const [maxX, setMaxX] = useState(0);
 
   const [selectedModel, setSelectedModel] = useState(PREDICTION_MODELS[1]);
-  const [bezierCurveDegree, setBezierCurveDegree] = useState(5);
-  const [numLayers, setNumLayers] = useState(3);
+  const [bezierCurveDegree, setBezierCurveDegree] = useState(4);
+  const [numLayers, setNumLayers] = useState(4);
   const [pointsPerSecond, setPointsPerSecond] = useState(20);
   const [bidirectional, setBidirectional] = useState(true);
 

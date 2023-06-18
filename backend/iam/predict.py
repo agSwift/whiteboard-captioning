@@ -7,14 +7,9 @@ import torch
 from iam import bezier_curves, dataset, extraction, train
 from fast_ctc_decode import beam_search
 
-# ALL_MODEL_TYPES = list(train.ModelType)
-ALL_NUM_LAYERS = [3]
-ALL_BEZIER_CURVE_DEGREES = [5]
-ALL_MODEL_TYPES = [
-    # train.ModelType.GRU,
-    # train.ModelType.RNN,
-    train.ModelType.LSTM,
-]
+ALL_MODEL_TYPES = list(train.ModelType)
+ALL_BEZIER_CURVE_DEGREES = [2, 3, 4, 5]
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -26,70 +21,67 @@ def _load_models():
 
     for model_type in ALL_MODEL_TYPES:
         for bezier_curve_degree in ALL_BEZIER_CURVE_DEGREES:
-            for num_layers in ALL_NUM_LAYERS:
-                # Create the model file name.
-                model_file_name = train.get_model_file_name(
-                    model_name=model_type.name.lower(),
-                    bezier_curve_degree=bezier_curve_degree,
-                    num_layers=num_layers,
-                    bidirectional=True,
+            # Create the model file name.
+            model_file_name = train.get_model_file_name(
+                model_name=model_type.name.lower(),
+                bezier_curve_degree=bezier_curve_degree,
+                num_layers=4,
+                bidirectional=True,
+            )
+
+            # Ensure the model exists.
+            model_path = Path(f"backend/iam/models/{model_file_name}.ckpt")
+            assert model_path.exists(), (
+                f"Model {model_file_name} does not exist.\n"
+                "Run train.py to train the model."
+            )
+
+            # Get the bezier curve dimension for the model.
+            extracted_data_path = extraction.get_extracted_data_file_path(
+                with_cross_val=train.CROSS_VALIDATION,
+                bezier_degree=bezier_curve_degree,
+            )
+            assert (
+                extracted_data_path.exists()
+            ), f"Extracted data {extracted_data_path} does not exist.\n"
+            all_bezier_data = np.load(extracted_data_path)
+
+            train_cross_val_dataset = dataset.StrokeBezierDataset(
+                all_bezier_data=all_bezier_data,
+                dataset_type=extraction.DatasetType.TRAIN_CROSS_VAL,
+            )
+
+            # Get the index to char mapping and alphabet if not already loaded.
+            if index_to_char is None:
+                index_to_char = (
+                    train_cross_val_dataset.get_index_to_char_mapping()
+                )
+                alphabet = "".join(
+                    [
+                        index_to_char[index]
+                        for index in sorted(
+                            index_to_char.keys()
+                        )  # Epsilon character at index 0 is included.
+                    ]
                 )
 
-                # Ensure the model exists.
-                model_path = Path(f"backend/iam/models/{model_file_name}.ckpt")
-                assert model_path.exists(), (
-                    f"Model {model_file_name} does not exist.\n"
-                    "Run train.py to train the model."
-                )
+            # Load the model.
+            bezier_curve_dimension = train_cross_val_dataset.all_bezier_curves[
+                0
+            ].shape[-1]
+            model = model_type.value(
+                bezier_curve_dimension=bezier_curve_dimension,
+                hidden_size=train.HIDDEN_SIZE,
+                num_classes=len(index_to_char),
+                num_layers=4,
+                dropout=train.DROPOUT_RATE,
+                bidirectional=True,
+                device=DEVICE,
+            ).to(DEVICE)
+            model.load_state_dict(torch.load(model_path, map_location=DEVICE))
 
-                # Get the bezier curve dimension for the model.
-                extracted_data_path = extraction.get_extracted_data_file_path(
-                    with_cross_val=train.CROSS_VALIDATION,
-                    bezier_degree=bezier_curve_degree,
-                )
-                assert (
-                    extracted_data_path.exists()
-                ), f"Extracted data {extracted_data_path} does not exist.\n"
-                all_bezier_data = np.load(extracted_data_path)
-
-                train_cross_val_dataset = dataset.StrokeBezierDataset(
-                    all_bezier_data=all_bezier_data,
-                    dataset_type=extraction.DatasetType.TRAIN_CROSS_VAL,
-                )
-
-                # Get the index to char mapping and alphabet if not already loaded.
-                if index_to_char is None:
-                    index_to_char = (
-                        train_cross_val_dataset.get_index_to_char_mapping()
-                    )
-                    alphabet = "".join(
-                        [
-                            index_to_char[index]
-                            for index in sorted(
-                                index_to_char.keys()
-                            )  # Epsilon character at index 0 is included.
-                        ]
-                    )
-
-                # Load the model.
-                bezier_curve_dimension = (
-                    train_cross_val_dataset.all_bezier_curves[0].shape[-1]
-                )
-                model = model_type.value(
-                    bezier_curve_dimension=bezier_curve_dimension,
-                    hidden_size=train.HIDDEN_SIZE,
-                    num_classes=len(index_to_char),
-                    num_layers=num_layers,
-                    dropout=train.DROPOUT_RATE,
-                    bidirectional=True,
-                    device=DEVICE,
-                ).to(DEVICE)
-                model.load_state_dict(
-                    torch.load(model_path, map_location=DEVICE)
-                )
-
-                # Add the model to the dictionary.
-                loaded_models[model_file_name] = model
+            # Add the model to the dictionary.
+            loaded_models[model_file_name] = model
 
     return loaded_models, index_to_char, alphabet
 
@@ -193,7 +185,7 @@ def predict_greedy_beam_labels(
         points_per_second (int): The number of points to keep per second.
 
     Returns:
-        str, str, list[float], list[float], list[float], list[float]: 
+        str, str, list[float], list[float], list[float], list[float]:
             A tuple containing the predicted greedy and beam search strings,
             the x points and y points of the stroke points and bezier curves.
 
@@ -273,7 +265,7 @@ def predict_greedy_beam_labels(
             bezier_x_points,
             bezier_y_points,
             bezier_curve_features,
-        ) = bezier_curves.fit_stroke_with_bezier_curve(
+        ) = bezier_curves.fit_stroke_with_bezier_curve_veloc_acc(
             stroke=stroke_data, degree=bezier_curve_degree
         )
         bezier_curves_data.append(bezier_curve_features)
