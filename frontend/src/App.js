@@ -11,8 +11,8 @@ const PREDICTION_MODELS = ["RNN", "LSTM", "GRU"];
 const MAX_SAMPLING_RATE = 200;
 
 function App() {
-  const [greedyPredictedText, setGreedyPredictedText] = useState();
-  const [beamPredictedText, setBeamPredictedText] = useState();
+  const [greedyPredictedText, setGreedyPredictedText] = useState('');
+  const [beamPredictedText, setBeamPredictedText] = useState('');
 
   const [strokes, setStrokes] = useState([]);
   const [maxY, setMaxY] = useState(0);
@@ -29,6 +29,11 @@ function App() {
   const [bezierXPoints, setBezierXPoints] = useState([]);
   const [bezierYPoints, setBezierYPoints] = useState([]);
   const [graphNumber, setGraphNumber] = useState(-1);
+
+  const resetPredictions = () => {
+    setGreedyPredictedText('');
+    setBeamPredictedText('');
+  }
 
   const SendData = (e) => {
     const data = {
@@ -94,6 +99,7 @@ function App() {
           setMaxX={setMaxX}
           maxY={maxY}
           setMaxY={setMaxY}
+          resetPredictions={resetPredictions}
         />
       </div>
       <div style={centeredDivStyle}>
@@ -124,8 +130,8 @@ function App() {
       </div>
       <div style={centeredDivStyle}>
         <ParameterSlider
-          min={1}
-          max={9}
+          min={2}
+          max={5}
           value={bezierCurveDegree}
           setValue={setBezierCurveDegree}
           label={"Bezier Curve Degree"}

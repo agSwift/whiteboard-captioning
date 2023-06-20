@@ -13,7 +13,7 @@ const ModelSelectButton = ({ modelName, selectedModel, setSelectedModel }) => {
     
       const selectedModelButtonStyle = {
         ...modelButtonStyle,
-        backgroundColor: "darkgreen",
+        backgroundColor: "green",
       };
 
       

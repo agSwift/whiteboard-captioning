@@ -7,6 +7,7 @@ const DrawingCanvas = ({
   setMaxX,
   maxY,
   setMaxY,
+  resetPredictions,
 }) => {
   const canvasRef = useRef(null);
   const [canvasContext, setCanvasContext] = useState(null);
@@ -32,6 +33,7 @@ const DrawingCanvas = ({
     setMaxX(maxX);
     setCanvasContext(ctx);
     setStrokes([]);
+    resetPredictions();
   };
 
   useEffect(() => Reset(), [canvasRef]);
