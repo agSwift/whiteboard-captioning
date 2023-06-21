@@ -10,7 +10,7 @@ Before you begin, ensure you have installed the following:
 * A version of [`Node v14.7.0`](https://nodejs.org/en/blog/release/v14.7.0) and above.
 
 ## Getting Started
-Download the [IAM-OnDB dataset](https://fki.tic.heia-fr.ch/databases/iam-on-line-handwriting-database). Save the `ascii`, `lineImages` and `lineStrokes` directories under the `backend/datasets/IAM` folder within the repository.
+Download the [IAM-OnDB dataset](https://fki.tic.heia-fr.ch/databases/iam-on-line-handwriting-database). Create a new folder, `backend/datasets/IAM`, within the repository. Save the `ascii`, `lineImages` and `lineStrokes` directories in this new folder.
 
 Once done, ensure that you have navigated (`cd`) into the root of the repository.
 
