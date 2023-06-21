@@ -48,10 +48,10 @@ Open your favourite browser, and go to http://localhost:3000.
 
 ## Demo
 #### Handwriting Recognition:
-![writing](https://github.com/agSwift/whiteboard-captioning/assets/36814369/ae8c2fe3-7b58-4a43-91d9-04f88fd38665)  
+![writing](https://github.com/agSwift/whiteboard-captioning/assets/36814369/7f22a6f2-c6ba-4293-92ae-ab98397b6bca)
 
 #### Fitted Bézier Curves:
-![bezier](https://github.com/agSwift/whiteboard-captioning/assets/36814369/18464e6e-0574-459f-84a4-f9168773d79a)  
+![bezier](https://github.com/agSwift/whiteboard-captioning/assets/36814369/df067651-e596-4d84-8d39-5cf978a22f53)
 
 ## License
 
