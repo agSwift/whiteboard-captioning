@@ -780,3 +780,11 @@ def extract_all_data(
         with_cross_val=with_cross_val,
         all_chars_arr=all_chars_arr,
     )
+
+
+if __name__ == "__main__":
+    # Extract data for Bezier curve degrees which are used in the web app.
+    bezier_curve_degrees = [2, 3, 4, 5]
+
+    for degree in bezier_curve_degrees:
+        extract_all_data(with_cross_val=False, bezier_degree=degree)
