@@ -48,9 +48,8 @@ Open your favourite browser, and go to http://localhost:3000.
 
 ## Demo
 
-![writing_AdobeExpress](https://github.com/agSwift/whiteboard-captioning/assets/36814369/c699c269-6741-4863-acb7-65cf509bf45b)
-
-![bezier_AdobeExpress](https://github.com/agSwift/whiteboard-captioning/assets/36814369/d5562d86-b8fb-4dc9-b8f1-478ab70ed4a4)
+![writing](https://github.com/agSwift/whiteboard-captioning/assets/36814369/ae8c2fe3-7b58-4a43-91d9-04f88fd38665)
+![bezier](https://github.com/agSwift/whiteboard-captioning/assets/36814369/18464e6e-0574-459f-84a4-f9168773d79a)
 
 ## License
 
