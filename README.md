@@ -47,8 +47,10 @@ Open your favourite browser, and go to http://localhost:3000.
 
 
 ## Demo
-
+Handwriting:
 ![writing](https://github.com/agSwift/whiteboard-captioning/assets/36814369/ae8c2fe3-7b58-4a43-91d9-04f88fd38665)
+
+Fitted Bézier curves:
 ![bezier](https://github.com/agSwift/whiteboard-captioning/assets/36814369/18464e6e-0574-459f-84a4-f9168773d79a)
 
 ## License
