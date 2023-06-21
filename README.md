@@ -1,6 +1,6 @@
 # Whiteboard Captioning
 
-This project was developed as part of my final year MEng Computing degree project at Imperial College London ([thesis](https://github.com/agSwift/whiteboard-captioning/blob/04b792d451adea5e1373f36f3de8461ab61d3869/final_report.pdf)). It explores an approach to handwriting recognition that leverages dynamic data from stylus or fingertip movements, and introduces two Bézier curve feature sets for the transformation of stroke points.
+This project was developed as part of my final year MEng Computing degree project at Imperial College London ([thesis](https://github.com/agSwift/whiteboard-captioning/blob/e654403d2b1d2e0a4a80c278c59cbd32c80c6d87/final_report.pdf)). It explores an approach to handwriting recognition that leverages dynamic data from stylus or fingertip movements, and introduces two Bézier curve feature sets for the transformation of stroke points.
 
 
 ## Prerequisites
